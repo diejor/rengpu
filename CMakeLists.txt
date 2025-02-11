@@ -4,7 +4,6 @@ project(LearnWebGPU
     LANGUAGES CXX C
 )
 
-
 add_subdirectory(webgpu)
 add_subdirectory(src)
 

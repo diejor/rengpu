@@ -26,6 +26,10 @@ target_link_libraries(app PRIVATE
     webgpu
 )
 
+if (EMSCRIPTEN)
+    set_target_properties(app PROPERTIES SUFFIX ".html")
+endif()
+
 # The application's binary must find wgpu.dll or libwgpu.so at runtime,
 # so we automatically copy it (it's called WGPU_RUNTIME_LIB in general)
 # next to the binary.
