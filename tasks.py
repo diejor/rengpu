@@ -11,7 +11,7 @@ from typing import Optional
 
 from invoke import task
 
-PROJECT: str = "cppu"
+PROJECT: str = "rengpu"
 SRC_PATH: Path = Path(__file__).parent
 # VCPKG_TOOLCHAIN = SRC_PATH / "vcpkg/scripts/buildsystems/vcpkg.cmake"
 WORKSPACE: Path = Path("/tmp/builds/cpp")
@@ -138,6 +138,7 @@ def clean(c):
     """Clean build directory."""
     
     cmp = SRC_PATH.joinpath("compile_commands.json")
+    print(cmp)
     if cmp.exists():
         cmp.unlink()
         print(f"Removed {cmp}")

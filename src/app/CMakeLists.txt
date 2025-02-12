@@ -7,6 +7,10 @@ set_target_properties(app PROPERTIES
     COMPILE_WARNINGS_AS_ERRORS ON
 )
 
+if(UNIX AND NOT APPLE)
+    set_target_properties(app PROPERTIES INSTALL_RPATH "$ORIGIN")
+endif()
+
 if (MSVC)
     target_compile_options(app PRIVATE /W4)
 else ()
@@ -28,6 +32,7 @@ target_link_libraries(app PRIVATE
 
 if (EMSCRIPTEN)
     set_target_properties(app PROPERTIES SUFFIX ".html")
+    target_link_options(app PRIVATE -sASYNCIFY)
 endif()
 
 # The application's binary must find wgpu.dll or libwgpu.so at runtime,
@@ -36,4 +41,3 @@ endif()
 target_copy_webgpu_binaries(app)
 
 install(TARGETS app)
-
