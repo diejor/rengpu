@@ -3,7 +3,7 @@
 # chosen value in case the base style changes (last sync: Clang 13.0).
 ---
 ### General config, applies to all languages ###
-BasedOnStyle:  Google
+BasedOnStyle: Google
 AccessModifierOffset: -4
 AlignAfterOpenBracket: BlockIndent
 # AlignArrayOfStructures: None

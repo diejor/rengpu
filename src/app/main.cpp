@@ -1,128 +1,120 @@
+#include <webgpu-utils.h>
 #include <webgpu/webgpu.h>
 
-#ifdef __EMSCRIPTEN__
-include<emscripten.h>
-#endif
+#ifdef WEBGPU_BACKEND_WGPU
+#  include <webgpu/wgpu.h>
+#endif // WEBGPU_BACKEND_WGPU
 
 #include <cassert>
+#include <cstring>
 #include <iostream>
 
-		using namespace std;
-
-WGPUAdapter requestAdapterSync(WGPUInstance instance, const WGPURequestAdapterOptions* options) {
-	struct UserData {
-		WGPUAdapter adapter = nullptr;
-		bool requestEnded = false;
-	};
-	UserData userData;
-
-	auto onAdapterRequestEnded =
-			[](WGPURequestAdapterStatus status, WGPUAdapter adapter, const char* message, void* pUserData) {
-				UserData& userData = *reinterpret_cast<UserData*>(pUserData);
-				if (status == WGPURequestAdapterStatus_Success) {
-					userData.adapter = adapter;
-				} else {
-					std::cout << "Could not get WebGPU adapter: " << message << std::endl;
-				}
-				userData.requestEnded = true;
-			};
-
-	wgpuInstanceRequestAdapter(instance, options, onAdapterRequestEnded, (void*)&userData);
-
-#ifdef __EMSCRIPTEN__
-	while (!userData.requestEnded) {
-		emscripten_sleep(100);
-	}
-#endif	// __EMSCRIPTEN__
-
-	assert(userData.requestEnded);
-
-	return userData.adapter;
-}
-
-WGPUDevice requestDeviceSync(WGPUAdapter adapter, const WGPUDeviceDescriptor* descriptor) {
-	struct UserData {
-		WGPUDevice device = nullptr;
-		bool requestEnded = false;
-	};
-	UserData userData;
-
-	auto onDeviceRequestEnded = [](WGPURequestDeviceStatus status, WGPUDevice device, const char* message, void* pUserData) {
-		UserData& userData = *reinterpret_cast<UserData*>(pUserData);
-        if (status == WGPURequestDeviceStatus_Success) {
-            userData.device = device;
-        } else {
-            std::cout << "Could not get WebGPU device: " << message << std::endl;
-        }
-		userData.requestEnded = true;
-	};
-
-	wgpuAdapterRequestDevice(adapter, descriptor, onDeviceRequestEnded, (void*)&userData);
-
-#ifdef __EMSCRIPTEN__
-	while (!userData.requestEnded) {
-		emscripten_sleep(100);
-	}
-#endif	// __EMSCRIPTEN__
-
-	assert(userData.requestEnded);
-
-	return userData.device;
-}
-
 int main() {
+	WGPUInstanceDescriptor instanceDesc = {};
+	instanceDesc.nextInChain = nullptr;
 
+#ifdef WEBGPU_BACKEND_DAWN
+	// Make sure the uncaptured error callback is called as soon as an error
+	// occurs rather than at the next call to "wgpuDeviceTick".
+	WGPUDawnTogglesDescriptor toggles = {};
+	toggles.chain.next = nullptr;
+	toggles.chain.sType = WGPUSType_DawnTogglesDescriptor;
+	toggles.disabledToggleCount = 0;
+	toggles.enabledToggleCount = 1;
+	const char* toggleName = "enable_immediate_error_handling";
+	toggles.enabledToggles = &toggleName;
 
-    cout << "Requesting instance" << endl;
-	WGPUInstanceDescriptor desc = {};
-	desc.nextInChain = nullptr;
+	instanceDesc.nextInChain = &toggles.chain;
+#endif
 
-#ifdef WEBGPU_BACKEND_EMSCRIPTEN
+#ifdef __EMSCRIPTEN__
 	WGPUInstance instance = wgpuCreateInstance(nullptr);
 #else
-	WGPUInstance instance = wgpuCreateInstance(&desc);
-#endif
-    cout << "Instance created: " << instance << endl;
+	WGPUInstance instance = wgpuCreateInstance(&instanceDesc);
+#endif	// __EMSCRIPTEN__
+	std::cout << "Instance created: " << instance << std::endl;
 
-    cout << "Requesting adapter" << endl;
-	WGPURequestAdapterOptions adapterOptions = {}; // if not {} then it will be garbage and requestAdapterSync will not find the adapter
+	WGPURequestAdapterOptions adapterOptions = {};
 	adapterOptions.nextInChain = nullptr;
+
 	WGPUAdapter adapter = requestAdapterSync(instance, &adapterOptions);
-    cout << "Adapter created: " << adapter << endl;
+	std::cout << "Adapter created: " << adapter << std::endl;
 	wgpuInstanceRelease(instance);
 
-    cout << "Requesting device" << endl;
-    WGPUDeviceDescriptor deviceDesc = {};
-    deviceDesc.nextInChain = nullptr;
-    deviceDesc.label = "Device";
-    deviceDesc.requiredFeatureCount= 0;
-    deviceDesc.requiredLimits = nullptr;
-    deviceDesc.defaultQueue.nextInChain = nullptr;
-    deviceDesc.defaultQueue.label = "Default Queue";
-    deviceDesc.deviceLostCallback = [](WGPUDeviceLostReason reason, const char* message, void*) {
-        cout << "Device lost: reason " << reason << endl;
-        if (message != nullptr) {
-            cout << "Message: " << message << endl;
-        }
-        cout << endl;
-    };
+	WGPUDeviceDescriptor deviceDesc = {};
+	deviceDesc.label = "My Device";
+	deviceDesc.nextInChain = nullptr;
+	deviceDesc.requiredLimits = nullptr;
+	deviceDesc.requiredFeatureCount = 0;
+	deviceDesc.requiredLimits = nullptr;
 
-    WGPUDevice device = requestDeviceSync(adapter, &deviceDesc);
-    cout << "Device created: " << device << endl;
-    wgpuAdapterRelease(adapter);
+	deviceDesc.deviceLostCallbackInfo.nextInChain = nullptr;
+	deviceDesc.deviceLostCallbackInfo.mode = WGPUCallbackMode_WaitAnyOnly;
+	deviceDesc.deviceLostCallbackInfo.callback =
+			[](const WGPUDevice* device, WGPUDeviceLostReason reason, const char* message, void*) {
+				std::cout << "Device lost: " << device << ", reason: " << reason;
+				if (message != nullptr) {
+					std::cout << ", message: " << message;
+				};
+				std::cout << std::endl;
+			};
+	deviceDesc.deviceLostCallbackInfo.userdata = nullptr;
 
-    auto onDeviceError = [](WGPUErrorType type, const char* message, void*) {
-        cout << "Uncaptured device error: type " << type;
-        if (message != nullptr) {
-            cout << ", message: " << message;
-        }
-        cout << endl;
-    };
+	deviceDesc.defaultQueue.nextInChain = nullptr;
+	deviceDesc.defaultQueue.label = "My Queue";
 
-    wgpuDeviceSetUncapturedErrorCallback(device, onDeviceError, nullptr);
+	WGPUUncapturedErrorCallbackInfo uncapturedErrorCallbackInfo = {};
+	uncapturedErrorCallbackInfo.nextInChain = nullptr;
+	uncapturedErrorCallbackInfo.userdata = nullptr;
+	uncapturedErrorCallbackInfo.callback = [](WGPUErrorType type, const char* message, void*) {
+		std::cout << "Uncaptured error: type " << type;
+		if (message != nullptr) {
+			std::cout << ", message: " << message;
+		};
+		std::cout << std::endl;
+	};
 
-    
+	WGPUDevice device = requestDeviceSync(adapter, &deviceDesc);
+	std::cout << "Device created: " << device << std::endl;
+	wgpuAdapterRelease(adapter);
 
-    wgpuDeviceRelease(device);
-	return 0;
+	WGPUQueue queue = wgpuDeviceGetQueue(device);
+	WGPUQueueWorkDoneCallback onQueueWorkDone = [](WGPUQueueWorkDoneStatus status, void* userdata) {
+		std::cout << "Work done: " << status << std::endl;
+	};
+	wgpuQueueOnSubmittedWorkDone(queue, onQueueWorkDone, nullptr);
+
+	WGPUCommandEncoderDescriptor encoderDesc = {};
+	encoderDesc.nextInChain = nullptr;
+	encoderDesc.label = "My Encoder";
+	WGPUCommandEncoder encoder = wgpuDeviceCreateCommandEncoder(device, &encoderDesc);
+
+	WGPUCommandBufferDescriptor commandBufferDesc = {};
+	commandBufferDesc.nextInChain = nullptr;
+	commandBufferDesc.label = "My Command Buffer";
+	WGPUCommandBuffer commandBuffer = wgpuCommandEncoderFinish(encoder, &commandBufferDesc);
+	wgpuCommandEncoderRelease(encoder);
+
+	std::cout << "Submitting command buffer" << std::endl;
+	wgpuQueueSubmit(queue, 1, &commandBuffer);
+	wgpuCommandBufferRelease(commandBuffer);
+	std::cout << "Command buffer submitted" << std::endl;
+
+    // to avoid this use context boolean in onQueueWorkDone and wait for it to be true
+    // im thinking that with WGPUFuture this might get simplified/unified
+    // requesting an adapter and a device might work the same way
+	for (int i = 0; i < 5; ++i) {
+		std::cout << "Tick/Poll device..." << std::endl;
+#if defined(WEBGPU_BACKEND_DAWN)
+		wgpuDeviceTick(device);
+#elif defined(WEBGPU_BACKEND_WGPU)
+		wgpuDevicePoll(device, false, nullptr);
+#elif defined(WEBGPU_BACKEND_EMSCRIPTEN)
+		emscripten_sleep(100);
+#endif
+	}
+
+	// Maybe unique_ptr?
+	wgpuQueueRelease(queue);
+	wgpuDeviceRelease(device);
 }
