@@ -1,7 +1,9 @@
 .cache/
 vcpkg_installed/
 compile_commands.json
-webgpu/
+
+# CMake
+.workspace/
 
 # Prerequisites
 *.d

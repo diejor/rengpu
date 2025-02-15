@@ -14,7 +14,7 @@ from invoke import task
 PROJECT: str = "rengpu"
 SRC_PATH: Path = Path(__file__).parent
 # VCPKG_TOOLCHAIN = SRC_PATH / "vcpkg/scripts/buildsystems/vcpkg.cmake"
-WORKSPACE: Path = Path("/tmp/builds/cpp")
+WORKSPACE: Path = SRC_PATH / ".cache"
 MD5: Optional[str] = None
 BUILD_PATH: Optional[Path] = None
 INSTALL_PATH: Optional[Path] = None
@@ -28,8 +28,7 @@ def get_md5(content: str) -> str:
 
 
 def get_cmake_workspace() -> Path:
-    hash = get_md5(str(SRC_PATH))
-    return WORKSPACE / f"{PROJECT}_{SRC_PATH.name}_{hash}"
+    return WORKSPACE / f"{PROJECT}"
 
 
 def get_build_path() -> Path:
@@ -130,8 +129,11 @@ def run(c):
     print()
     binary_path = get_install_path() / "usr/local/bin/app"
     print("{}: running on {}".format(PROJECT, binary_path))
+
+    print(" ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ ")
+    print()
     c.run(str(binary_path), pty=True)
-    print("{}: finalized".format(PROJECT))
+    print()
 
 @task
 def clean(c):
