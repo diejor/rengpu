@@ -1,4 +1,4 @@
-add_executable(app main.cpp)
+add_executable(app main.cpp application.cpp)
 
 set_target_properties(app PROPERTIES
     CXX_STANDARD 17
@@ -24,19 +24,13 @@ if (XCODE)
     )
 endif()
 
-if (NOT EMSCRIPTEN)
-    add_subdirectory(glfw)
-else()
-    add_library(glfw INTERFACE)
-    target_link_options(glfw INTERFACE -sUSE_GLFW=3)
-endif()
-# add glfw before webgpu so the version can be decided
 
 # include directories here
 target_link_libraries(app PRIVATE
     utils
     webgpu
     glfw
+    glfw3webgpu
 )
 
 if (EMSCRIPTEN)
