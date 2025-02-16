@@ -1,4 +1,3 @@
-#include <webgpu-utils.h>
 #include <webgpu/webgpu.h>
 #include <GLFW/glfw3.h>
 
@@ -22,8 +21,8 @@ int main() {
 	};
 	emscripten_set_main_loop_arg(callback, &app, 0, true);
 #else // __EMSCRIPTEN__
-	while (app.is_running()) {
-		app.main_loop();
+	while (app.isRunning()) {
+		app.mainLoop();
 	}
 #endif // __EMSCRIPTEN__
 

@@ -1,6 +1,5 @@
 #include <GLFW/glfw3.h>
 #include <glfw3webgpu.h>
-#include <webgpu-utils.h>
 #include <webgpu/webgpu.h>
 
 #ifdef WEBGPU_BACKEND_WGPU
@@ -8,6 +7,7 @@
 #endif	// WEBGPU_BACKEND_WGPU
 
 #include "application.h"
+#include "webgpu-utils.h"
 
 #include <iostream>
 
@@ -113,10 +113,10 @@ void Application::terminate() {
 	glfwTerminate();
 }
 
-void Application::main_loop() {
+void Application::mainLoop() {
 	glfwPollEvents();
 
-	WGPUTextureView texture_view = next_texture_view();
+	WGPUTextureView texture_view = nextTextureView();
 	if (!texture_view) {
 		return;
 	}
@@ -136,7 +136,7 @@ void Application::main_loop() {
 	colorAttachment.resolveTarget = nullptr;
 	colorAttachment.loadOp = WGPULoadOp_Clear;
 	colorAttachment.storeOp = WGPUStoreOp_Store;
-	colorAttachment.clearValue = { 0.1f, 0.2f, 0.3f, 1.0f };
+	colorAttachment.clearValue = { 0.5f, 0.2f, 0.3f, 1.0f };
 #ifndef WEBGPU_BACKEND_WGPU
 	colorAttachment.depthSlice = WGPU_DEPTH_SLICE_UNDEFINED;
 #endif
@@ -160,7 +160,7 @@ void Application::main_loop() {
 	wgpuCommandBufferRelease(commandBuffer);
 
 	wgpuTextureViewRelease(texture_view);
-#ifdef __EMSCRIPTEN__
+#ifndef __EMSCRIPTEN__
 	wgpuSurfacePresent(_surface);
 #endif
 
@@ -171,7 +171,7 @@ void Application::main_loop() {
 #endif
 }
 
-WGPUTextureView Application::next_texture_view() {
+WGPUTextureView Application::nextTextureView() {
 	WGPUSurfaceTexture surface_texture = {};
 	wgpuSurfaceGetCurrentTexture(_surface, &surface_texture);
 
@@ -198,6 +198,6 @@ WGPUTextureView Application::next_texture_view() {
 	return target_view;
 }
 
-bool Application::is_running() {
+bool Application::isRunning() {
 	return !glfwWindowShouldClose(_window);
 }

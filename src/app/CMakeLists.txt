@@ -1,4 +1,8 @@
-add_executable(app main.cpp application.cpp)
+add_executable(app 
+    main.cpp 
+    application.cpp 
+    webgpu-utils.cpp
+)
 
 set_target_properties(app PROPERTIES
     CXX_STANDARD 17

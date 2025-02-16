@@ -7,10 +7,10 @@ class Application {
 public:
 	bool initialize();
 	void terminate();
-    void main_loop();
-    bool is_running();
+    void mainLoop();
+    bool isRunning();
 private:
-    WGPUTextureView next_texture_view();
+    WGPUTextureView nextTextureView();
 
     GLFWwindow* _window;
     WGPUDevice _device;
