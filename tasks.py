@@ -79,6 +79,7 @@ def do_config(c):
         "-GNinja",
         "-DCMAKE_BUILD_TYPE=RelWithDebInfo",
         "-DCMAKE_EXPORT_COMPILE_COMMANDS=1",
+        "-DGLFW_BUILD_WAYLAND=OFF",
         #f"-DCMAKE_TOOLCHAIN_FILE={str(VCPKG_TOOLCHAIN)}",
     ]
     c.run(" ".join(cmd), pty=True)
