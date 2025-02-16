@@ -29,8 +29,8 @@ endif()
 target_link_libraries(app PRIVATE
     utils
     webgpu
-    glfw
-    glfw3webgpu
+    SDL2::SDL2
+    sdl2webgpu
 )
 
 if (EMSCRIPTEN)

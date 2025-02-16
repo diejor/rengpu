@@ -1,7 +1,8 @@
 #pragma once
 
 #include "webgpu/webgpu.h"
-#include <GLFW/glfw3.h>
+#define SDL_MAIN_HANDLED
+#include <SDL2/SDL.h>
 
 class Application {
 public:
@@ -12,7 +13,7 @@ public:
 private:
     WGPUTextureView next_texture_view();
 
-    GLFWwindow* _window;
+    SDL_Window* _window;
     WGPUDevice _device;
     WGPUQueue _queue;
     WGPUSurface _surface;

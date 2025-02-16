@@ -1,33 +1,26 @@
+#include "application.h"
+
+#include <GLFW/glfw3.h>
 #include <webgpu-utils.h>
 #include <webgpu/webgpu.h>
-#include <GLFW/glfw3.h>
-
 
 #include <cassert>
 #include <cstring>
 
-#include "application.h"
-
 int main() {
-    Application app;   
+	Application app;
 
-    if (!app.initialize()) {
-        return -1;
-    }
-    
-    #ifdef __EMSCRIPTEN__
-	auto callback = [](void *arg) {
-		Application* pApp = reinterpret_cast<Application*>(arg);
-		pApp->main_loop(); // 4. We can use the application object
-	};
-	emscripten_set_main_loop_arg(callback, &app, 0, true);
-#else // __EMSCRIPTEN__
+	if (!app.initialize()) {
+		return -1;
+	}
+
 	while (app.is_running()) {
 		app.main_loop();
 	}
-#endif // __EMSCRIPTEN__
 
-    app.terminate();
+    std::cout << "Terminating application" << std::endl;
 
-    return 0;
+	app.terminate();
+
+	return 0;
 }

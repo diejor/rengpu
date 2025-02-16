@@ -1,5 +1,7 @@
-#include <GLFW/glfw3.h>
-#include <glfw3webgpu.h>
+
+#define SDL_MAIN_HANDLED
+#include <SDL2/SDL.h>
+#include <sdl2webgpu.h>
 #include <webgpu-utils.h>
 #include <webgpu/webgpu.h>
 
@@ -12,37 +14,34 @@
 #include <iostream>
 
 bool Application::initialize() {
-    glfwInit();
-    glfwSetErrorCallback([](int error, const char* description) {
-        std::cerr << "GLFW error " << error << ": " << description << std::endl;
-    });
-
-	int width = 800;
-	int height = 600;
-	glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-	glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
-	_window = glfwCreateWindow(width, height, "WebGPU Example", NULL, NULL);
-
-	if (!_window) {
-		std::cerr << "Failed to create window" << std::endl;
-		glfwTerminate();
-		return -1;
+	SDL_SetMainReady();
+    std::cout << "Initializing SDL" << std::endl;
+	if (SDL_Init(SDL_INIT_VIDEO) < 0) {
+		std::cerr << "Could not initialize SDL! Error: " << SDL_GetError() << std::endl;
+		return 1;
 	}
 
+	int width = 640;
+	int height = 480;
+	int windowFlags = 0;
+	_window = SDL_CreateWindow(
+			"Learn WebGPU", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, width, height, windowFlags
+	);
+    std::cout << "Window created: " << _window << std::endl;
 
-    WGPUInstance instance = wgpuCreateInstance(nullptr);
-	_surface = glfwCreateWindowWGPUSurface(instance, _window);
+	WGPUInstance instance = wgpuCreateInstance(nullptr);
+	_surface = SDL_GetWGPUSurface(instance, _window);
 
-    std::cout << "Requesting adapter" << std::endl;
+	std::cout << "Requesting adapter" << std::endl;
 	WGPURequestAdapterOptions adapterOptions = {};
 	adapterOptions.nextInChain = nullptr;
-    adapterOptions.compatibleSurface = _surface;
+	adapterOptions.compatibleSurface = _surface;
 	WGPUAdapter adapter = requestAdapterSync(instance, &adapterOptions);
 	std::cout << "Adapter created: " << adapter << std::endl;
 
 	wgpuInstanceRelease(instance);
 
-    std::cout << "Requesting device" << std::endl;
+	std::cout << "Requesting device" << std::endl;
 	WGPUDeviceDescriptor deviceDesc = {};
 	deviceDesc.label = "My Device";
 	deviceDesc.nextInChain = nullptr;
@@ -74,7 +73,7 @@ bool Application::initialize() {
 		};
 		std::cout << std::endl;
 	};
-    deviceDesc.uncapturedErrorCallbackInfo = uncapturedErrorCallbackInfo;
+	deviceDesc.uncapturedErrorCallbackInfo = uncapturedErrorCallbackInfo;
 
 	_device = requestDeviceSync(adapter, &deviceDesc);
 	std::cout << "Device created: " << _device << std::endl;
@@ -86,8 +85,8 @@ bool Application::initialize() {
 	config.height = height;
 	config.width = width;
 
-    WGPUSurfaceCapabilities capabilities = {};
-    wgpuSurfaceGetCapabilities(_surface, adapter, &capabilities);
+	WGPUSurfaceCapabilities capabilities = {};
+	wgpuSurfaceGetCapabilities(_surface, adapter, &capabilities);
 	config.format = capabilities.formats[0];
 	config.viewFormatCount = 0;
 	config.viewFormats = nullptr;
@@ -98,7 +97,6 @@ bool Application::initialize() {
 
 	wgpuSurfaceConfigure(_surface, &config);
 
-
 	wgpuAdapterRelease(adapter);
 
 	return true;
@@ -108,14 +106,12 @@ void Application::terminate() {
 	wgpuDeviceRelease(_device);
 	wgpuQueueRelease(_queue);
 	wgpuSurfaceUnconfigure(_surface);
-    wgpuSurfaceRelease(_surface);
-	glfwDestroyWindow(_window);
-	glfwTerminate();
+	wgpuSurfaceRelease(_surface);
+    SDL_DestroyWindow(_window);
+    SDL_Quit();
 }
 
 void Application::main_loop() {
-	glfwPollEvents();
-
 	WGPUTextureView texture_view = next_texture_view();
 	if (!texture_view) {
 		return;
@@ -129,7 +125,6 @@ void Application::main_loop() {
 	WGPURenderPassDescriptor renderPassDesc = {};
 	renderPassDesc.nextInChain = nullptr;
 	renderPassDesc.label = "My Render Pass";
-
 
 	WGPURenderPassColorAttachment colorAttachment = {};
 	colorAttachment.view = texture_view;
@@ -199,5 +194,20 @@ WGPUTextureView Application::next_texture_view() {
 }
 
 bool Application::is_running() {
-	return !glfwWindowShouldClose(_window);
+	bool should_run = true;
+	while (should_run) {
+		SDL_Event event;
+		while (SDL_PollEvent(&event)) {
+			switch (event.type) {
+				case SDL_QUIT:
+					should_run= false;
+					break;
+
+				default:
+					break;
+			}
+		}
+	}
+
+    return should_run;
 }
