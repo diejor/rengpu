@@ -2,6 +2,10 @@
 vcpkg_installed/
 compile_commands.json
 
+# Visual Studio
+out
+.vs
+
 # CMake
 .workspace/
 
