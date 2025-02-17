@@ -12,10 +12,10 @@
 #include <iostream>
 
 bool Application::initialize() {
-    glfwInit();
-    glfwSetErrorCallback([](int error, const char* description) {
-        std::cerr << "GLFW error " << error << ": " << description << std::endl;
-    });
+	glfwInit();
+	glfwSetErrorCallback([](int error, const char* description) {
+		std::cerr << "GLFW error " << error << ": " << description << std::endl;
+	});
 
 	int width = 800;
 	int height = 600;
@@ -29,65 +29,42 @@ bool Application::initialize() {
 		return -1;
 	}
 
-
-    WGPUInstance instance = wgpuCreateInstance(nullptr);
+	WGPUInstance instance = wgpuCreateInstance(nullptr);
 	_surface = glfwCreateWindowWGPUSurface(instance, _window);
 
-    std::cout << "Requesting adapter" << std::endl;
+	std::cout << "Requesting adapter" << std::endl;
 	WGPURequestAdapterOptions adapterOptions = {};
 	adapterOptions.nextInChain = nullptr;
-    adapterOptions.compatibleSurface = _surface;
+	adapterOptions.compatibleSurface = _surface;
 	WGPUAdapter adapter = requestAdapterSync(instance, &adapterOptions);
 	std::cout << "Adapter created: " << adapter << std::endl;
-
 	wgpuInstanceRelease(instance);
 
-    std::cout << "Requesting device" << std::endl;
+
+	std::cout << "Requesting device" << std::endl;
 	WGPUDeviceDescriptor deviceDesc = {};
 	deviceDesc.label = "My Device";
 	deviceDesc.nextInChain = nullptr;
 	deviceDesc.requiredLimits = nullptr;
 	deviceDesc.requiredFeatureCount = 0;
 
-	deviceDesc.deviceLostCallbackInfo.nextInChain = nullptr;
-	deviceDesc.deviceLostCallbackInfo.mode = WGPUCallbackMode_WaitAnyOnly;
-	deviceDesc.deviceLostCallbackInfo.callback =
-			[](const WGPUDevice* device, WGPUDeviceLostReason reason, const char* message, void*) {
-				std::cout << "Device lost: " << device << ", reason: " << reason;
-				if (message != nullptr) {
-					std::cout << ", message: " << message;
-				};
-				std::cout << std::endl;
-			};
-	deviceDesc.deviceLostCallbackInfo.userdata = nullptr;
-
 	deviceDesc.defaultQueue.nextInChain = nullptr;
 	deviceDesc.defaultQueue.label = "My Queue";
 
-	WGPUUncapturedErrorCallbackInfo uncapturedErrorCallbackInfo = {};
-	uncapturedErrorCallbackInfo.nextInChain = nullptr;
-	uncapturedErrorCallbackInfo.userdata = nullptr;
-	uncapturedErrorCallbackInfo.callback = [](WGPUErrorType type, const char* message, void*) {
-		std::cout << "Uncaptured error: type " << type;
-		if (message != nullptr) {
-			std::cout << ", message: " << message;
-		};
-		std::cout << std::endl;
-	};
-    deviceDesc.uncapturedErrorCallbackInfo = uncapturedErrorCallbackInfo;
-
 	_device = requestDeviceSync(adapter, &deviceDesc);
+	wgpuAdapterRelease(adapter);
 	std::cout << "Device created: " << _device << std::endl;
 
 	_queue = wgpuDeviceGetQueue(_device);
 
+	std::cout << "Configuring surface" << std::endl;
 	WGPUSurfaceConfiguration config = {};
 	config.nextInChain = nullptr;
 	config.height = height;
 	config.width = width;
 
-    WGPUSurfaceCapabilities capabilities = {};
-    wgpuSurfaceGetCapabilities(_surface, adapter, &capabilities);
+	WGPUSurfaceCapabilities capabilities = {};
+	wgpuSurfaceGetCapabilities(_surface, adapter, &capabilities);
 	config.format = capabilities.formats[0];
 	config.viewFormatCount = 0;
 	config.viewFormats = nullptr;
@@ -97,9 +74,78 @@ bool Application::initialize() {
 	config.alphaMode = WGPUCompositeAlphaMode_Auto;
 
 	wgpuSurfaceConfigure(_surface, &config);
+	std::cout << "Surface configured" << std::endl;
 
+	WGPURenderPipelineDescriptor pipelineDesc = {};
+	pipelineDesc.nextInChain = nullptr;
 
-	wgpuAdapterRelease(adapter);
+	pipelineDesc.vertex.bufferCount = 0;
+	pipelineDesc.vertex.buffers = nullptr;
+	//pipelineDesc.vertex.module = shaderModule;
+	pipelineDesc.vertex.entryPoint = "vs_main";
+	pipelineDesc.vertex.constantCount = 0;
+	pipelineDesc.vertex.constants = nullptr;
+
+	pipelineDesc.primitive.topology = WGPUPrimitiveTopology_TriangleList;
+	pipelineDesc.primitive.stripIndexFormat = WGPUIndexFormat_Undefined;
+	pipelineDesc.primitive.frontFace = WGPUFrontFace_CCW;
+	pipelineDesc.primitive.cullMode = WGPUCullMode_None;
+
+	WGPUFragmentState fragmentState = {};
+    //fragmentState.module = shaderModule;
+	fragmentState.entryPoint = "fs_main";
+	fragmentState.constantCount = 0;
+	fragmentState.constants = nullptr;
+	pipelineDesc.fragment = &fragmentState;
+
+	pipelineDesc.depthStencil = nullptr;
+
+	WGPUBlendState blendState = {};
+	blendState.color.srcFactor = WGPUBlendFactor_SrcAlpha;
+	blendState.color.dstFactor = WGPUBlendFactor_OneMinusSrcAlpha;
+	blendState.color.operation = WGPUBlendOperation_Add;
+
+	blendState.alpha.srcFactor = WGPUBlendFactor_Zero;
+	blendState.alpha.dstFactor = WGPUBlendFactor_One;
+	blendState.alpha.operation = WGPUBlendOperation_Add;
+
+	WGPUColorTargetState colorTargetState = {};
+	colorTargetState.format = config.format;
+	colorTargetState.blend = &blendState;
+	colorTargetState.writeMask = WGPUColorWriteMask_All;
+
+	fragmentState.targetCount = 1;
+	fragmentState.targets = &colorTargetState;
+
+	pipelineDesc.multisample.count = 1;
+	pipelineDesc.multisample.mask = -0u;  // all bits on
+	pipelineDesc.multisample.alphaToCoverageEnabled = false;
+
+	const char* shaderSource = R"(
+
+@vertex
+fn vs_main(@builtin(vertex_index) in_vertex_index: u32) -> @builtin(position) vec4f {
+    var p = vec2f(0.0, 0.0);
+    if (in_vertex_index == 0u) {
+        p = vec2f(-0.5, -0.5);
+    } else if (in_vertex_index == 1u) {
+        p = vec2f(0.5, -0.5);
+    } else {
+        p = vec2f(0.0, 0.5);
+    }
+    return vec4f(p, 0.0, 1.0);
+}
+
+@fragment
+fn fs_main() -> @location(0) vec4f {
+    return vec4f(0.0, 0.4, 1.0, 1.0);
+}
+
+    )";
+
+    WGPUShaderModuleDescriptor shaderDesc = {};
+    shaderDesc.nextInChain = nullptr;
+    shaderDesc.label = "My Shader";
 
 	return true;
 }
@@ -108,7 +154,7 @@ void Application::terminate() {
 	wgpuDeviceRelease(_device);
 	wgpuQueueRelease(_queue);
 	wgpuSurfaceUnconfigure(_surface);
-    wgpuSurfaceRelease(_surface);
+	wgpuSurfaceRelease(_surface);
 	glfwDestroyWindow(_window);
 	glfwTerminate();
 }
@@ -129,7 +175,6 @@ void Application::mainLoop() {
 	WGPURenderPassDescriptor renderPassDesc = {};
 	renderPassDesc.nextInChain = nullptr;
 	renderPassDesc.label = "My Render Pass";
-
 
 	WGPURenderPassColorAttachment colorAttachment = {};
 	colorAttachment.view = texture_view;

@@ -37,9 +37,31 @@ target_link_libraries(app PRIVATE
     glfw3webgpu
 )
 
+
 if (EMSCRIPTEN)
-    set_target_properties(app PROPERTIES SUFFIX ".html")
-    target_link_options(app PRIVATE -sASYNCIFY)
+    set(SHELL_FILE shell_minimal.html)
+
+    target_link_options(app PRIVATE
+        -sUSE_GLFW=3
+        -sUSE_WEBGPU
+        -sASYNCIFY
+        --preload-file "${CMAKE_SOURCE_DIR}/resources@/resources"
+        --shell-file "${CMAKE_CURRENT_SOURCE_DIR}/${SHELL_FILE}"
+        -sALLOW_MEMORY_GROWTH
+    )
+
+    set_property(
+        TARGET app
+        PROPERTY LINK_DEPENDS
+        "${CMAKE_CURRENT_SOURCE_DIR}/${SHELL_FILE}"
+    )
+
+    set_target_properties(app PROPERTIES 
+        OUTPUT_NAME "index"
+        SUFFIX ".html" 
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}"
+    )
+
 endif()
 
 
