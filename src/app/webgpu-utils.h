@@ -43,5 +43,6 @@ WGPUAdapter requestAdapterSync(WGPUInstance instance, WGPURequestAdapterOptions 
  *     const device = await adapter.requestDevice(descriptor);
  * It is very similar to requestAdapter
  */
-WGPUDevice requestDeviceSync(WGPUAdapter adapter, WGPUDeviceDescriptor const* descriptor);
+WGPUDevice requestDeviceSync(WGPUInstance instance, WGPUAdapter adapter, WGPUDeviceDescriptor const* descriptor);
 
+WGPUStringView wgpuStringViewFromCString(const char* str);

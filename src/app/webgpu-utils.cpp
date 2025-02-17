@@ -26,6 +26,8 @@
 
 
 #include "webgpu-utils.h"
+#include <webgpu/webgpu.h>
+#include <cstring>
 
 #ifdef __EMSCRIPTEN__
 #  include <emscripten.h>
@@ -41,17 +43,23 @@ WGPUAdapter requestAdapterSync(WGPUInstance instance, WGPURequestAdapterOptions 
 	};
 	UserData userData;
 
-	WGPURequestAdapterCallback onAdapterRequestEnded = [](WGPURequestAdapterStatus status, WGPUAdapter adapter, const char* message, void* pUserData) {
+	WGPURequestAdapterCallback onAdapterRequestEnded = [](WGPURequestAdapterStatus status, WGPUAdapter adapter, WGPUStringView message, void* pUserData, void*) {
 				UserData& userData = *reinterpret_cast<UserData*>(pUserData);
 				if (status == WGPURequestAdapterStatus_Success) {
 					userData.adapter = adapter;
 				} else {
-					std::cout << "Could not get WebGPU adapter: " << message << std::endl;
+					std::cout << "Could not get WebGPU adapter: " << message.data << std::endl;
 				}
 				userData.requestEnded = true;
 			};
 
-	wgpuInstanceRequestAdapter(instance, options, onAdapterRequestEnded, (void*)&userData);
+    WGPURequestAdapterCallbackInfo adapterCallbackInfo = {};
+    adapterCallbackInfo.callback = onAdapterRequestEnded;
+    adapterCallbackInfo.mode = WGPUCallbackMode_WaitAnyOnly;
+    adapterCallbackInfo.userdata1 = (void*)&userData;
+    adapterCallbackInfo.userdata2 = nullptr;
+
+	wgpuInstanceRequestAdapter(instance, options, adapterCallbackInfo);
 
 #ifdef __EMSCRIPTEN__
 	while (!userData.requestEnded) {
@@ -65,7 +73,7 @@ WGPUAdapter requestAdapterSync(WGPUInstance instance, WGPURequestAdapterOptions 
 }
 
 
-WGPUDevice requestDeviceSync(WGPUAdapter adapter, WGPUDeviceDescriptor const* descriptor) {
+WGPUDevice requestDeviceSync(WGPUInstance instance, WGPUAdapter adapter, WGPUDeviceDescriptor const* descriptor) {
 	struct UserData {
 		WGPUDevice device = nullptr;
 		bool requestEnded = false;
@@ -73,17 +81,24 @@ WGPUDevice requestDeviceSync(WGPUAdapter adapter, WGPUDeviceDescriptor const* de
 	UserData userData;
 
 	WGPURequestDeviceCallback onDeviceRequestEnded =
-			[](WGPURequestDeviceStatus status, WGPUDevice device, const char* message, void* pUserData) {
+			[](WGPURequestDeviceStatus status, WGPUDevice device, WGPUStringView message, void* pUserData, void*) {
 				UserData& userData = *reinterpret_cast<UserData*>(pUserData);
 				if (status == WGPURequestDeviceStatus_Success) {
 					userData.device = device;
 				} else {
-					std::cout << "Could not get WebGPU device: " << message << std::endl;
+					std::cout << "Could not get WebGPU device: " << message.data << std::endl;
 				}
 				userData.requestEnded = true;
 			};
 
-	wgpuAdapterRequestDevice(adapter, descriptor, onDeviceRequestEnded, (void*)&userData);
+    WGPURequestDeviceCallbackInfo deviceCallbackInfo = {};
+    deviceCallbackInfo.callback = onDeviceRequestEnded;
+    deviceCallbackInfo.mode = WGPUCallbackMode_WaitAnyOnly;
+    deviceCallbackInfo.userdata1 = (void*)&userData;
+    deviceCallbackInfo.userdata2 = nullptr;
+
+
+	wgpuAdapterRequestDevice(adapter, descriptor, deviceCallbackInfo);
 
 #ifdef __EMSCRIPTEN__
 	while (!userData.requestEnded) {
@@ -96,3 +111,9 @@ WGPUDevice requestDeviceSync(WGPUAdapter adapter, WGPUDeviceDescriptor const* de
 	return userData.device;
 }
 
+WGPUStringView wgpuStringViewFromCString(const char* str) {
+    WGPUStringView view;
+    view.data = str;
+    view.length = strlen(str);
+    return view;
+}
