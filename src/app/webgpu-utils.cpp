@@ -41,7 +41,7 @@ WGPUAdapter requestAdapterSync(WGPUInstance instance, WGPURequestAdapterOptions 
 	};
 	UserData userData;
 
-	WGPURequestAdapterCallback onAdapterRequestEnded = [](WGPURequestAdapterStatus status, WGPUAdapter adapter, const char* message, void* pUserData) {
+	auto onAdapterRequestEnded = [](WGPURequestAdapterStatus status, WGPUAdapter adapter, const char* message, void* pUserData) {
 				UserData& userData = *reinterpret_cast<UserData*>(pUserData);
 				if (status == WGPURequestAdapterStatus_Success) {
 					userData.adapter = adapter;
@@ -72,7 +72,7 @@ WGPUDevice requestDeviceSync(WGPUAdapter adapter, WGPUDeviceDescriptor const* de
 	};
 	UserData userData;
 
-	WGPURequestDeviceCallback onDeviceRequestEnded =
+	auto onDeviceRequestEnded =
 			[](WGPURequestDeviceStatus status, WGPUDevice device, const char* message, void* pUserData) {
 				UserData& userData = *reinterpret_cast<UserData*>(pUserData);
 				if (status == WGPURequestDeviceStatus_Success) {

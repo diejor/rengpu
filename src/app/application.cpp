@@ -52,7 +52,6 @@ bool Application::initialize() {
 	deviceDesc.defaultQueue.label = "My Queue";
 
 	_device = requestDeviceSync(adapter, &deviceDesc);
-	wgpuAdapterRelease(adapter);
 	std::cout << "Device created: " << _device << std::endl;
 
 	_queue = wgpuDeviceGetQueue(_device);
@@ -65,6 +64,7 @@ bool Application::initialize() {
 
 	WGPUSurfaceCapabilities capabilities = {};
 	wgpuSurfaceGetCapabilities(_surface, adapter, &capabilities);
+	wgpuAdapterRelease(adapter);
 	config.format = capabilities.formats[0];
 	config.viewFormatCount = 0;
 	config.viewFormats = nullptr;
