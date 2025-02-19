@@ -45,7 +45,9 @@ WGPUAdapter requestAdapterSync(WGPUInstance instance, WGPURequestAdapterOptions 
 
 	WGPURequestAdapterCallback onAdapterRequestEnded = [](WGPURequestAdapterStatus status, WGPUAdapter adapter, WGPUStringView message, void* pUserData, void*) {
 				UserData& userData = *reinterpret_cast<UserData*>(pUserData);
+                std::cout << "Adapter request ended" << std::endl;
 				if (status == WGPURequestAdapterStatus_Success) {
+                    std::cout << "Adapter created: " << adapter << std::endl;
 					userData.adapter = adapter;
 				} else {
 					std::cout << "Could not get WebGPU adapter: " << message.data << std::endl;
@@ -55,11 +57,17 @@ WGPUAdapter requestAdapterSync(WGPUInstance instance, WGPURequestAdapterOptions 
 
     WGPURequestAdapterCallbackInfo adapterCallbackInfo = {};
     adapterCallbackInfo.callback = onAdapterRequestEnded;
-    adapterCallbackInfo.mode = WGPUCallbackMode_WaitAnyOnly;
+    adapterCallbackInfo.mode = WGPUCallbackMode_AllowProcessEvents;
     adapterCallbackInfo.userdata1 = (void*)&userData;
-    adapterCallbackInfo.userdata2 = nullptr;
 
-	wgpuInstanceRequestAdapter(instance, options, adapterCallbackInfo);
+
+	WGPUFuture adapterFuture = wgpuInstanceRequestAdapter(instance, options, adapterCallbackInfo);
+
+
+    std::cout << "Waiting for adapter request to end" << std::endl;
+    WGPUFutureWaitInfo waitInfo = {};
+    waitInfo.future = adapterFuture;
+    waitInfo.completed = userData.requestEnded;
 
 #ifdef __EMSCRIPTEN__
 	while (!userData.requestEnded) {
@@ -67,10 +75,42 @@ WGPUAdapter requestAdapterSync(WGPUInstance instance, WGPURequestAdapterOptions 
 	}
 #endif	// __EMSCRIPTEN__
 
+    std::cout << "Request ended" << std::endl;
 	assert(userData.requestEnded);
 
 	return userData.adapter;
 }
+
+void inspectAdapter(WGPUAdapter adapter) {
+    //WGPUSupportedFeatures supportedFeatures = {};
+
+	// Call the function a first time with a null return address, just to get
+	// the entry count.
+	//wgpuAdapterGetFeatures(adapter, &supportedFeatures);
+
+	//std::cout << "Adapter features:" << std::endl;
+    //std::cout << std::hex; // Print hex numbers
+    //for (uint32_t i = 0; i < supportedFeatures.featureCount; ++i) {
+    //    WGPUFeatureName feature = supportedFeatures.features[i];
+    //    std::cout << " - " << feature << std::endl;
+    //}
+	//std::cout << std::dec; // Restore decimal numbers
+    //
+	WGPUAdapterInfo adapterInfo= {};
+    wgpuAdapterGetInfo(adapter, &adapterInfo);
+    std:: cout << "Adapter device: " << adapterInfo.device.data << std::endl;
+    std:: cout << "Adapter deviceID: " << adapterInfo.deviceID << std::endl;
+    std:: cout << "Adapter vendor: " << adapterInfo.vendor.data << std::endl;
+    std:: cout << "Adapter vendorID: " << adapterInfo.vendorID << std::endl;
+    std:: cout << "Adapter architecture: " << adapterInfo.architecture.data << std::endl;
+    std:: cout << "Adapter description: " << adapterInfo.description.data << std::endl;
+
+    std::cout << std::hex; // Print hex numbers
+    std::cout << "Adapter type: 0x" << adapterInfo.adapterType << std::endl;
+    std::cout << "Adapter backend: 0x" << adapterInfo.backendType << std::endl;
+    std::cout << std::dec; // Restore decimal numbers
+}
+
 
 
 WGPUDevice requestDeviceSync(WGPUInstance instance, WGPUAdapter adapter, WGPUDeviceDescriptor const* descriptor) {
@@ -109,11 +149,4 @@ WGPUDevice requestDeviceSync(WGPUInstance instance, WGPUAdapter adapter, WGPUDev
 	assert(userData.requestEnded);
 
 	return userData.device;
-}
-
-WGPUStringView wgpuStringViewFromCString(const char* str) {
-    WGPUStringView view;
-    view.data = str;
-    view.length = strlen(str);
-    return view;
 }

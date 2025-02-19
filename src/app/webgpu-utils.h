@@ -37,6 +37,12 @@
 WGPUAdapter requestAdapterSync(WGPUInstance instance, WGPURequestAdapterOptions const* options);
 
 /**
+ * An example of how we can inspect the capabilities of the hardware through
+ * the adapter object.
+ */
+void inspectAdapter(WGPUAdapter adapter);
+
+/**
  * Utility function to get a WebGPU device, so that
  *     WGPUDevice device = requestDeviceSync(adapter, options);
  * is roughly equivalent to
@@ -44,5 +50,3 @@ WGPUAdapter requestAdapterSync(WGPUInstance instance, WGPURequestAdapterOptions 
  * It is very similar to requestAdapter
  */
 WGPUDevice requestDeviceSync(WGPUInstance instance, WGPUAdapter adapter, WGPUDeviceDescriptor const* descriptor);
-
-WGPUStringView wgpuStringViewFromCString(const char* str);

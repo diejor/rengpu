@@ -70,7 +70,7 @@ def config(c):
         "-GNinja",
         "-DCMAKE_BUILD_TYPE=RelWithDebInfo",
         "-DCMAKE_EXPORT_COMPILE_COMMANDS=1",
-        "-DGLFW_BUILD_WAYLAND=OFF",
+        "-D_GLFW_WAYLAND=ON"
     ]
     c.run(" ".join(cmd), pty=True)
 
