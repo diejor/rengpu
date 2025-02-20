@@ -70,4 +70,6 @@ endif()
 # next to the binary.
 target_copy_webgpu_binaries(app)
 
-install(TARGETS app)
+install(TARGETS app
+    RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}"
+)

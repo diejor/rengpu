@@ -1,6 +1,8 @@
 #include <GLFW/glfw3.h>
 #include <glfw3webgpu.h>
-#include <webgpu/webgpu.h>
+#define WEBGPU_CPP_IMPLEMENTATION
+#include <webgpu/webgpu-raii.hpp>
+#include <webgpu/webgpu.hpp>
 
 #ifdef WEBGPU_BACKEND_WGPU
 #include <webgpu/wgpu.h>
@@ -29,17 +31,31 @@ bool Application::initialize() {
 		return -1;
 	}
 
-	WGPUInstance instance = wgpuCreateInstance(nullptr);
+	wgpu::Instance instance = wgpu::create_instance();
 	_surface = glfwCreateWindowWGPUSurface(instance, _window);
 
 	std::cout << "Requesting adapter" << std::endl;
-	WGPURequestAdapterOptions adapterOptions = {};
-	adapterOptions.nextInChain = nullptr;
-	adapterOptions.compatibleSurface = _surface;
-	WGPUAdapter adapter = requestAdapterSync(instance, &adapterOptions);
+	wgpu::RequestAdapterOptions adapter_options = {};
+	adapter_options.nextInChain = nullptr;
+	adapter_options.compatibleSurface = _surface;
+	wgpu::raii::Adapter adapter;
+	auto callback = [&adapter](wgpu::RequestAdapterStatus status, wgpu::Adapter adapter_handle, const char* message) {
+		if (status == wgpu::RequestAdapterStatus::Error) {
+			std::cerr << "Failed to request adapter: " << message << std::endl;
+			return;
+		} else {
+			std::cout << "Adapter requested: " << adapter_handle << std::endl;
+		}
+		adapter = std::move(adapter_handle);
+	};
+	auto instance_cb = instance.request_adapter(adapter_options, std::move(callback));
 	std::cout << "Adapter created: " << adapter << std::endl;
-	wgpuInstanceRelease(instance);
 
+#ifdef __EMSCRIPTEN__
+	while (!adapter) {
+		emscripten_sleep(100);
+	}
+#endif	// __EMSCRIPTEN__
 
 	std::cout << "Requesting device" << std::endl;
 	WGPUDeviceDescriptor deviceDesc = {};
@@ -51,8 +67,23 @@ bool Application::initialize() {
 	deviceDesc.defaultQueue.nextInChain = nullptr;
 	deviceDesc.defaultQueue.label = "My Queue";
 
-	_device = requestDeviceSync(adapter, &deviceDesc);
+	auto device_callback = [this](wgpu::RequestDeviceStatus status, wgpu::Device device_handle, const char* message) {
+		if (status == wgpu::RequestDeviceStatus::Error) {
+			std::cerr << "Failed to request device: " << message << std::endl;
+			return;
+		} else {
+			std::cout << "Device requested: " << device_handle << std::endl;
+		}
+		_device = device_handle;
+	};
+	adapter->request_device(deviceDesc, std::move(device_callback));
 	std::cout << "Device created: " << _device << std::endl;
+
+#ifdef __EMSCRIPTEN__
+	while (!_device) {
+		emscripten_sleep(100);
+	}
+#endif	// __EMSCRIPTEN__
 
 	_queue = wgpuDeviceGetQueue(_device);
 
@@ -63,8 +94,7 @@ bool Application::initialize() {
 	config.width = width;
 
 	WGPUSurfaceCapabilities capabilities = {};
-	wgpuSurfaceGetCapabilities(_surface, adapter, &capabilities);
-	wgpuAdapterRelease(adapter);
+	wgpuSurfaceGetCapabilities(_surface, *adapter, &capabilities);
 	config.format = capabilities.formats[0];
 	config.viewFormatCount = 0;
 	config.viewFormats = nullptr;
@@ -81,7 +111,7 @@ bool Application::initialize() {
 
 	pipelineDesc.vertex.bufferCount = 0;
 	pipelineDesc.vertex.buffers = nullptr;
-	//pipelineDesc.vertex.module = shaderModule;
+	// pipelineDesc.vertex.module = shaderModule;
 	pipelineDesc.vertex.entryPoint = "vs_main";
 	pipelineDesc.vertex.constantCount = 0;
 	pipelineDesc.vertex.constants = nullptr;
@@ -92,7 +122,7 @@ bool Application::initialize() {
 	pipelineDesc.primitive.cullMode = WGPUCullMode_None;
 
 	WGPUFragmentState fragmentState = {};
-    //fragmentState.module = shaderModule;
+	// fragmentState.module = shaderModule;
 	fragmentState.entryPoint = "fs_main";
 	fragmentState.constantCount = 0;
 	fragmentState.constants = nullptr;
@@ -143,9 +173,9 @@ fn fs_main() -> @location(0) vec4f {
 
     )";
 
-    WGPUShaderModuleDescriptor shaderDesc = {};
-    shaderDesc.nextInChain = nullptr;
-    shaderDesc.label = "My Shader";
+	WGPUShaderModuleDescriptor shaderDesc = {};
+	shaderDesc.nextInChain = nullptr;
+	shaderDesc.label = "My Shader";
 
 	return true;
 }

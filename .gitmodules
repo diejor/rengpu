@@ -1,9 +1,9 @@
-[submodule "glfw"]
-	path = glfw
+[submodule "third-party/glfw"]
+	path = third-party/glfw
 	url = https://github.com/glfw/glfw.git
-[submodule "webgpu"]
-	path = webgpu
-	url = https://github.com/diejor/WebGPU-distribution
-[submodule "glfw3webgpu"]
-	path = glfw3webgpu
-	url = https://github.com/eliemichel/glfw3webgpu
+[submodule "third-party/webgpu"]
+	path = third-party/webgpu
+	url = https://github.com/diejor/WebGPU-distribution.git
+[submodule "third-party/glfw3webgpu"]
+	path = third-party/glfw3webgpu
+	url = https://github.com/eliemichel/glfw3webgpu.git
