@@ -5,7 +5,7 @@ add_executable(app
 )
 
 set_target_properties(app PROPERTIES
-    CXX_STANDARD 17
+    CXX_STANDARD 20
     CXX_STANDARD_REQUIRED ON
     CXX_EXTENSIONS OFF
     COMPILE_WARNINGS_AS_ERRORS ON
@@ -28,13 +28,11 @@ if (XCODE)
     )
 endif()
 
-
-# include directories here
 target_link_libraries(app PRIVATE
     utils
     webgpu
     glfw
-    glfw3webgpu
+    glfw-webgpu
 )
 
 
@@ -63,11 +61,5 @@ if (EMSCRIPTEN)
     )
 
 endif()
-
-
-# The application's binary must find wgpu.dll or libwgpu.so at runtime,
-# so we automatically copy it (it's called WGPU_RUNTIME_LIB in general)
-# next to the binary.
-target_copy_webgpu_binaries(app)
 
 install(TARGETS app)

@@ -1,5 +1,4 @@
-#include <webgpu/webgpu.h>
-#include <GLFW/glfw3.h>
+#include "application.h"
 
 #ifdef __EMSCRIPTEN__
 #include <emscripten/html5.h>
@@ -7,8 +6,6 @@
 
 #include <cassert>
 #include <cstring>
-
-#include "application.h"
 
 int main() {
     Application app;   

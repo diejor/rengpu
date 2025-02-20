@@ -9,11 +9,15 @@ public:
 	void terminate();
     void mainLoop();
     bool isRunning();
+    void initPipeline();
 private:
     WGPUTextureView nextTextureView();
 
     GLFWwindow* _window;
+    WGPUAdapter _adapter;
     WGPUDevice _device;
+    WGPUTextureFormat _surfaceFormat;
+    WGPURenderPipeline _pipeline;
     WGPUQueue _queue;
     WGPUSurface _surface;
 };
