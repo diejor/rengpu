@@ -13,7 +13,10 @@ private:
     WGPUTextureView nextTextureView();
 
     GLFWwindow* _window;
+    WGPUAdapter _adapter;
     WGPUDevice _device;
     WGPUQueue _queue;
     WGPUSurface _surface;
+    WGPUTextureFormat _surfaceFormat;
+    WGPURenderPipeline _pipeline;
 };
