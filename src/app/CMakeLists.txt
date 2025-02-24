@@ -1,14 +1,27 @@
 add_executable(app 
     main.cpp 
     application.cpp 
-    webgpu-utils.cpp
 )
+
 
 set_target_properties(app PROPERTIES
     CXX_STANDARD 20
     CXX_STANDARD_REQUIRED ON
     CXX_EXTENSIONS OFF
     COMPILE_WARNINGS_AS_ERRORS ON
+)
+
+target_include_directories(app PUBLIC
+    application.h
+)
+
+# include directories here
+target_link_libraries(app PRIVATE
+    webgpu
+    glfw
+    glfw3webgpu
+    renderer
+    utils
 )
 
 if(UNIX AND NOT APPLE)
@@ -27,16 +40,6 @@ if (XCODE)
         XCODE_SCHEME_ENABLE_GPU_FRAME_CAPTURE_MODE "Metal"
     )
 endif()
-
-
-# include directories here
-target_link_libraries(app PRIVATE
-    utils
-    webgpu
-    glfw
-    glfw3webgpu
-)
-
 
 if (EMSCRIPTEN)
     set(SHELL_FILE shell_minimal.html)
@@ -63,7 +66,6 @@ if (EMSCRIPTEN)
     )
 
 endif()
-
 
 # The application's binary must find wgpu.dll or libwgpu.so at runtime,
 # so we automatically copy it (it's called WGPU_RUNTIME_LIB in general)
