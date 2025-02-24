@@ -1,62 +1,76 @@
 #include "renderer_context.h"
-#include "logging-macros.h"
+
+#include "logging_macros.h"
 
 #include <webgpu/webgpu.h>
+#include <webgpu/wgpu.h>
+
+#include <utility>
 
 #ifdef __EMSCRIPTEN__
 #include <emscripten.h>
-#endif  // __EMSCRIPTEN__
+#endif	// __EMSCRIPTEN__
 
-static void onAdapterRequestEnded(WGPURequestAdapterStatus status, WGPUAdapter adapter, const char* message, void* userdata) {
-    if (status == WGPURequestAdapterStatus_Success || status == 1) {
-        *(WGPUAdapter*)userdata = adapter;
-        LOG_TRACE("  ~  got WebGPU adapter!");
-    } else {
-        ERR(true, "WebGPU could not get adapter: %s", message);
-    }
-    
+void onAdapterRequestEnded(
+		WGPURequestAdapterStatus status,
+		WGPUAdapter adapter,
+		const char* message,
+		void* userdata
+) {
+    RDContext* context = reinterpret_cast<RDContext*>(userdata);
+	if (status == WGPURequestAdapterStatus_Success || status == 1) {
+        context->adapter = adapter;
+		LOG_TRACE("  ~  got WebGPU adapter!");
+	} else {
+		ERR(true, "WebGPU could not get adapter: %s", message);
+	}
 }
 
-static void onDeviceRequestEnded(WGPURequestDeviceStatus status, WGPUDevice device, const char* message, void* userdata) {
-    if (status == WGPURequestDeviceStatus_Success || status == 1) {
-        *(WGPUDevice*)userdata = device;
-        LOG_TRACE("  ~  got WebGPU device!");
-    } else {
-        ERR(true, "WebGPU could not get device: %s", message);
-    }
+void onDeviceRequestEnded(
+		WGPURequestDeviceStatus status,
+		WGPUDevice device,
+		const char* message,
+		void* userdata
+) {
+    RDContext* context = reinterpret_cast<RDContext*>(userdata);
+	if (status == WGPURequestDeviceStatus_Success || status == 1) {
+        context->device = device;
+		LOG_TRACE("  ~  got WebGPU device!");
+	} else {
+		ERR(true, "WebGPU could not get device: %s", message);
+	}
 }
 
-void RendererContext::initialize(WGPUInstance p_instance, Surface p_surface) {
-    m_waitingAsync = false;
-    m_instance = p_instance;
-    m_surface = p_surface;
+void RDContext::initialize(WGPUInstance p_instance, RDSurface p_rdSurface) {
+	instance = p_instance;
+	rdSurface = std::move(p_rdSurface);
 
-    // ~~~~~~~~~ ADAPTER ~~~~~~~~~~
-    WGPURequestAdapterOptions options = {
-        .nextInChain = nullptr,
-        .compatibleSurface = m_surface.surface,
-        .powerPreference = WGPUPowerPreference_Undefined,
-        .backendType = WGPUBackendType_Undefined,
-        .forceFallbackAdapter = false,
-    };
+	// ~~~~~~~~~ ADAPTER ~~~~~~~~~~
+	WGPURequestAdapterOptions options = {
+		.nextInChain = nullptr,
+		.compatibleSurface = rdSurface.surface,
+		.powerPreference = WGPUPowerPreference_Undefined,
+		.backendType = WGPUBackendType_Undefined,
+		.forceFallbackAdapter = false,
+	};
 
-    m_adapter = nullptr;
-    LOG_TRACE("WEBGPU adapter requested");
-    wgpuInstanceRequestAdapter(m_instance, &options, onAdapterRequestEnded, &m_adapter);
+	adapter = nullptr;
+	LOG_TRACE("WEBGPU adapter requested");
+	wgpuInstanceRequestAdapter(instance, &options, onAdapterRequestEnded, this);
 
 #ifdef __EMSCRIPTEN__
-    while(m_adapter == nullptr) {
-        LOG_TRACE("adapter %p", m_adapter);
-        emscripten_sleep(100);
-    }
-    LOG_TRACE("Adapter is ready in Emscripten");
-#endif  // __EMSCRIPTEN__
-    
-    ERR(m_adapter == nullptr, "Adapter is null when requested ended, probably device is not ticking, or window is not polling");
+	while (adapter == nullptr) {
+		LOG_TRACE("adapter %p", adapter);
+		emscripten_sleep(100);
+	}
+	LOG_TRACE("Adapter is ready in Emscripten");
+#endif	// __EMSCRIPTEN__
 
-    
-    // ~~~~~~~~~ DEVICE ~~~~~~~~~~
-    WGPUDeviceDescriptor deviceDesc = {
+	ERR(adapter == nullptr,
+		"Adapter is null when requested ended, probably device is not ticking, or window is not polling");
+
+	// ~~~~~~~~~ DEVICE ~~~~~~~~~~
+	WGPUDeviceDescriptor deviceDesc = {
         .nextInChain = nullptr,
         .label = "My Device",
         .requiredFeatureCount = 0,
@@ -68,94 +82,135 @@ void RendererContext::initialize(WGPUInstance p_instance, Surface p_surface) {
         },
         .deviceLostCallback = nullptr,
         .deviceLostUserdata = nullptr,
-#ifndef __EMSCRIPTEN__
-        .uncapturedErrorCallbackInfo = {},
-#endif  // __EMSCRIPTEN__
     };
 
-    LOG_TRACE("WEBGPU device requested");
-    wgpuAdapterRequestDevice(m_adapter, &deviceDesc, onDeviceRequestEnded, &m_device);
+#ifndef __EMSCRIPTEN__
+        deviceDesc.uncapturedErrorCallbackInfo = {};
+#endif	// __EMSCRIPTEN__
+
+	LOG_TRACE("WEBGPU device requested");
+	wgpuAdapterRequestDevice(adapter, &deviceDesc, onDeviceRequestEnded, this);
 
 #ifdef __EMSCRIPTEN__
-    LOG_TRACE("Waiting for device to be ready in Emscripten");
-    while(m_device == nullptr) {
-        emscripten_sleep(100);
-    }
-#endif  // __EMSCRIPTEN__
+	LOG_TRACE("Waiting for device to be ready in Emscripten");
+	while (device == nullptr) {
+		emscripten_sleep(100);
+	}
+#endif	// __EMSCRIPTEN__
 
-    ERR(m_device == nullptr, "Device is null when requested ended, probably adapter is not ticking, or window is not polling");
+	ERR(device == nullptr,
+		"Device is null when requested ended, probably adapter is not ticking, or window is not polling");
 
+	// ~~~~~~~~~ QUEUE ~~~~~~~~~~
+	LOG_TRACE("WebGPU queue created");
+	queue = wgpuDeviceGetQueue(device);
 
-    // ~~~~~~~~~ QUEUE ~~~~~~~~~~
-    LOG_TRACE("WebGPU queue created");
-    m_queue = wgpuDeviceGetQueue(m_device);
-    
-    // ~~~~~~~~~ SURFACE ~~~~~~~~~~
-    configureSurface(p_surface);
+	// ~~~~~~~~~ SURFACE ~~~~~~~~~~
+	configureSurface(rdSurface);
 
-
-    LOG_TRACE("Renderer context initialized");
+	LOG_INFO("Renderer context initialized");
 }
 
-RendererContext::RendererContext() {
-    m_instance = nullptr;
-    m_adapter = nullptr;
-    m_device = nullptr;
-    m_queue = nullptr;
+RDContext::RDContext() {
+	instance = nullptr;
+	adapter = nullptr;
+	device = nullptr;
+	queue = nullptr;
 }
 
-RendererContext::~RendererContext() {
-    if (m_instance) {
-        wgpuInstanceRelease(m_instance);
-    } else {
-        LOG_WARN("Instance is null when destroying renderer context");
-    }
-    if (m_surface.surface) {
-        wgpuSurfaceRelease(m_surface.surface);
-    } else {
-        LOG_WARN("Surface is null when destroying renderer context");
-    }
-    if (m_adapter) {
-        wgpuAdapterRelease(m_adapter);
-    } else {
-        LOG_WARN("Adapter is null when destroying renderer context");
-    }
-    if (m_device) {
-        wgpuDeviceRelease(m_device);
-    } else {
-        LOG_WARN("Device is null when destroying renderer context");
-    }
-    if (m_queue) {
-        wgpuQueueRelease(m_queue);
-    } else {
-        LOG_WARN("Queue is null when destroying renderer context");
-    }
-    LOG_INFO("Renderer context destroyed");
+RDContext::~RDContext() {
+	if (instance) {
+		wgpuInstanceRelease(instance);
+	} else {
+		LOG_WARN("Instance is null when destroying renderer context");
+	}
+    // Window releases surface
+	// if (rdSurface.surface) {
+	//     wgpuSurfaceRelease(rdSurface.surface);
+	// } else {
+	//     LOG_WARN("Surface is null when destroying renderer context");
+	// }
+	if (adapter) {
+		wgpuAdapterRelease(adapter);
+	} else {
+		LOG_WARN("Adapter is null when destroying renderer context");
+	}
+	if (device) {
+		wgpuDeviceRelease(device);
+	} else {
+		LOG_WARN("Device is null when destroying renderer context");
+	}
+	if (queue) {
+		wgpuQueueRelease(queue);
+	} else {
+		LOG_WARN("Queue is null when destroying renderer context");
+	}
+	LOG_INFO("Renderer context destroyed");
 }
 
-void RendererContext::configureSurface(Surface& p_surface) {
-    ERR(m_adapter == nullptr, "Adapter is null, possibly context is not initialized");
-    ERR(m_device == nullptr, "Device is null, possibly context is not initialized");
+void RDContext::configureSurface(RDSurface& p_rdSurface) {
+	ERR(adapter == nullptr, "Adapter is null, possibly context is not initialized");
+	ERR(device == nullptr, "Device is null, possibly context is not initialized");
 
-    WARN_COND(p_surface.width == 0, "Surface width is 0");
-    WARN_COND(p_surface.height == 0, "Surface height is 0");
+	WARN_COND(p_rdSurface.width == 0, "Surface width is 0");
+	WARN_COND(p_rdSurface.height == 0, "Surface height is 0");
 
-    WGPUSurfaceCapabilities capabilities = {};
-	wgpuSurfaceGetCapabilities(p_surface.surface, m_adapter, &capabilities);
-    WGPUSurfaceConfiguration config = {
+	WGPUSurfaceCapabilities capabilities = {};
+	wgpuSurfaceGetCapabilities(p_rdSurface.surface, adapter, &capabilities);
+	WGPUSurfaceConfiguration config = {
 		.nextInChain = nullptr,
-		.device = m_device,
+		.device = device,
 		.format = capabilities.formats[0],
 		.usage = WGPUTextureUsage_RenderAttachment,
 		.viewFormatCount = 0,
 		.viewFormats = nullptr,
 		.alphaMode = WGPUCompositeAlphaMode_Auto,
-		.width = p_surface.width,
-		.height = p_surface.height,
+		.width = p_rdSurface.width,
+		.height = p_rdSurface.height,
 		.presentMode = WGPUPresentMode_Fifo,
 	};
-    p_surface.format = capabilities.formats[0];
+	p_rdSurface.format = capabilities.formats[0];
 
-    wgpuSurfaceConfigure(p_surface.surface, &config);
-    LOG_TRACE("Surface configured");
+	wgpuSurfaceConfigure(p_rdSurface.surface, &config);
+	LOG_TRACE("Surface configured");
+}
+
+WGPUTextureView RDContext::nextTextureView() {
+	WGPUSurfaceTexture surface_texture = {};
+	wgpuSurfaceGetCurrentTexture(rdSurface.surface, &surface_texture);
+
+	if (surface_texture.status != WGPUSurfaceGetCurrentTextureStatus_Success) {
+		return nullptr;
+	}
+
+	WGPUTextureViewDescriptor viewDescriptor = {
+		.nextInChain = nullptr,
+		.label = "Surface texture view",
+		.format = wgpuTextureGetFormat(surface_texture.texture),
+		.dimension = WGPUTextureViewDimension_2D,
+		.baseMipLevel = 0,
+		.mipLevelCount = 1,
+		.baseArrayLayer = 0,
+		.arrayLayerCount = 1,
+		.aspect = WGPUTextureAspect_All,
+	};
+	WGPUTextureView target_view = wgpuTextureCreateView(surface_texture.texture, &viewDescriptor);
+
+#ifndef WEBGPU_BACKEND_WGPU
+	wgpuTextureRelease(surface_texture.texture);
+#endif
+
+	return target_view;
+}
+
+void RDContext::polltick() {
+    #if defined(WEBGPU_BACKEND_DAWN)
+    wgpuDeviceTick(device);
+#elif defined(WEBGPU_BACKEND_WGPU)
+    wgpuDevicePoll(device, false, nullptr);
+#elif defined(WEBGPU_BACKEND_EMSCRIPTEN)
+    if (yieldToWebBrowser) {
+        emscripten_sleep(100);
+    }
+#endif
 }

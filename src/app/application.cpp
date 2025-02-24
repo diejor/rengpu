@@ -5,15 +5,14 @@
 #include <webgpu/webgpu.h>
 
 #include <cstdint>
+#include <utility>
 
 #ifdef WEBGPU_BACKEND_WGPU
 #include <webgpu/wgpu.h>
 #endif	// WEBGPU_BACKEND_WGPU
 
 #include "application.h"
-#include "logging-macros.h"
-
-struct Surface;
+#include "logging_macros.h"
 
 const char* shaderSource = R"(
 
@@ -40,7 +39,6 @@ fn fs_main() -> @location(0) vec4f {
 
 Application::Window Application::createWindow(uint32_t width, uint32_t height, const char* title) {
 	glfwInit();
-    LOG_INFO("GLFW initialized");
 
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
     glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
@@ -68,15 +66,18 @@ bool Application::initialize() {
     WGPUInstance instance = wgpuCreateInstance(nullptr);
     LOG_TRACE("WebGPU instance created");
 
-    RendererContext::Surface surface = {
-        .surface = glfwCreateWindowWGPUSurface(instance, m_window.handle),
-        .format = WGPUTextureFormat_Undefined, // format is deferred until surface is configured inside context
-        .width = width,
-        .height = height,
-    };
+    RDSurface rdSurface(
+            glfwCreateWindowWGPUSurface(instance, m_window.handle),
+            WGPUTextureFormat_Undefined, // format is deferred until surface is configured inside context
+            width,
+            height
+    );
 
-	m_context.initialize(instance, surface); 
+	m_context.initialize(instance, std::move(rdSurface));
 
+    initPipeline();
+
+    LOG_INFO("Application initialized");
 	return true;
 }
 
@@ -91,7 +92,7 @@ void Application::terminate() {
 void Application::mainLoop() {
 	glfwPollEvents();
 
-	WGPUTextureView texture_view = nextTextureView();
+	WGPUTextureView texture_view = m_context.nextTextureView();
 	if (!texture_view) {
 		return;
 	}
@@ -100,7 +101,7 @@ void Application::mainLoop() {
 		.nextInChain = nullptr,
 		.label = "My Encoder",
 	};
-	WGPUCommandEncoder encoder = wgpuDeviceCreateCommandEncoder(m_context.getDevice(), &encoderDesc);
+	WGPUCommandEncoder encoder = wgpuDeviceCreateCommandEncoder(m_context.device, &encoderDesc);
 
 	WGPURenderPassColorAttachment colorAttachment = {
 		.nextInChain = nullptr,
@@ -109,7 +110,7 @@ void Application::mainLoop() {
 		.resolveTarget = nullptr,
 		.loadOp = WGPULoadOp_Clear,
 		.storeOp = WGPUStoreOp_Store,
-		.clearValue = { 0.5f, 0.2f, 0.3f, 1.0f },
+		.clearValue = { 0.1f, 0.1f, 0.1f, 1.0f },
 	};
 
 #ifndef WEBGPU_BACKEND_WGPU
@@ -128,8 +129,8 @@ void Application::mainLoop() {
 
 	WGPURenderPassEncoder renderPass = wgpuCommandEncoderBeginRenderPass(encoder, &renderPassDesc);
 
-	// wgpuRenderPassEncoderSetPipeline(renderPass, m_context.getPipeline());
-	// wgpuRenderPassEncoderDraw(renderPass, 3, 1, 0, 0);
+	wgpuRenderPassEncoderSetPipeline(renderPass, m_pipeline);
+	wgpuRenderPassEncoderDraw(renderPass, 3, 1, 0, 0);
 
 	wgpuRenderPassEncoderEnd(renderPass);
 	wgpuRenderPassEncoderRelease(renderPass);
@@ -141,57 +142,106 @@ void Application::mainLoop() {
 	WGPUCommandBuffer commandBuffer = wgpuCommandEncoderFinish(encoder, &commandBufferDesc);
 	wgpuCommandEncoderRelease(encoder);
 
-	wgpuQueueSubmit(m_context.getQueue(), 1, &commandBuffer);
+	wgpuQueueSubmit(m_context.queue, 1, &commandBuffer);
 	wgpuCommandBufferRelease(commandBuffer);
 
 	wgpuTextureViewRelease(texture_view);
 #ifndef __EMSCRIPTEN__
-	wgpuSurfacePresent(m_context.getSurface());
+	wgpuSurfacePresent(m_context.rdSurface.surface);
 #endif
 
-#if defined(WEBGPU_BACKEND_DAWN)
-	wgpuDeviceTick(m_context.getDevice());
-#elif defined(WEBGPU_BACKEND_WGPU)
-	wgpuDevicePoll(m_context.getDevice(), false, nullptr);
-#endif
-}
-
-WGPUTextureView Application::nextTextureView() {
-
-	WGPUSurfaceTexture surface_texture = {};
-	wgpuSurfaceGetCurrentTexture(m_context.getSurface(), &surface_texture);
-
-	if (surface_texture.status != WGPUSurfaceGetCurrentTextureStatus_Success) {
-		return nullptr;
-	}
-
-	WGPUTextureViewDescriptor viewDescriptor = {
-		.nextInChain = nullptr,
-		.label = "Surface texture view",
-		.format = wgpuTextureGetFormat(surface_texture.texture),
-		.dimension = WGPUTextureViewDimension_2D,
-		.baseMipLevel = 0,
-		.mipLevelCount = 1,
-		.baseArrayLayer = 0,
-		.arrayLayerCount = 1,
-		.aspect = WGPUTextureAspect_All,
-	};
-	WGPUTextureView target_view = wgpuTextureCreateView(surface_texture.texture, &viewDescriptor);
-
-#ifndef WEBGPU_BACKEND_WGPU
-	wgpuTextureRelease(surface_texture.texture);
-#endif
-
-	return target_view;
+    m_context.polltick();
 }
 
 bool Application::isRunning() {
 	return !glfwWindowShouldClose(m_window.handle);
 }
 
+void Application::initPipeline() {
+    WGPUShaderModuleWGSLDescriptor shaderDesc = {
+        .chain = {
+            .next = nullptr,
+            .sType = WGPUSType_ShaderModuleWGSLDescriptor,
+        },
+        .code = shaderSource,
+    };
+
+	WGPUShaderModuleDescriptor moduleDesc = {
+		.nextInChain = reinterpret_cast<WGPUChainedStruct*>(&shaderDesc),
+		.label = "My Shader Module",
+		.hintCount = 0,
+		.hints = nullptr,
+	};
+
+	WGPUShaderModule module = wgpuDeviceCreateShaderModule(m_context.device, &moduleDesc);
+
+	WGPUBlendState blendState = {
+        .color = {
+            .operation = WGPUBlendOperation_Add,
+            .srcFactor = WGPUBlendFactor_SrcAlpha,
+            .dstFactor = WGPUBlendFactor_OneMinusSrcAlpha,
+        },
+        .alpha = {
+            .operation = WGPUBlendOperation_Add,
+            .srcFactor = WGPUBlendFactor_Zero,
+            .dstFactor = WGPUBlendFactor_One,
+        },
+    };
+
+	WGPUColorTargetState colorTargetState = {
+		.nextInChain = nullptr,
+		.format = m_context.rdSurface.format,
+		.blend = &blendState,
+		.writeMask = WGPUColorWriteMask_All,
+	};
+
+	const WGPUFragmentState fragmentState = {
+		.nextInChain = nullptr,
+		.module = module,
+		.entryPoint = "fs_main",
+		.constantCount = 0,
+		.constants = nullptr,
+		.targetCount = 1,
+		.targets = &colorTargetState,
+	};
+
+	WGPURenderPipelineDescriptor pipelineDesc = {
+        .nextInChain = nullptr,
+        .label = "My Pipeline",
+        .layout = nullptr,
+        .vertex = {
+            .nextInChain = nullptr,
+            .module = module,
+            .entryPoint = "vs_main",
+            .constantCount = 0,
+            .constants = nullptr,
+            .bufferCount = 0,
+            .buffers = nullptr,
+        },
+        .primitive = {
+            .nextInChain = nullptr,
+            .topology = WGPUPrimitiveTopology_TriangleList,
+            .stripIndexFormat = WGPUIndexFormat_Undefined,
+            .frontFace = WGPUFrontFace_CCW,
+            .cullMode = WGPUCullMode_None,
+        },
+        .depthStencil = nullptr,
+        .multisample = {
+            .nextInChain = nullptr,
+            .count = 1,
+            .mask = ~0u,
+            .alphaToCoverageEnabled = false,
+        },
+        .fragment = &fragmentState,  
+    };
+
+	m_pipeline = wgpuDeviceCreateRenderPipeline(m_context.device, &pipelineDesc);
+    LOG_INFO("Pipeline initialized");
+}
+
 Application::~Application() {
     if (m_window.handle != nullptr) {
         glfwDestroyWindow(m_window.handle);
-        LOG_TRACE("Application window destroyed");
+        LOG_INFO("Application window destroyed");
     }
 }

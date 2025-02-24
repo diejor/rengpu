@@ -1,6 +1,7 @@
 add_library(renderer STATIC
     renderer_context.h
     renderer_context.cpp
+    renderer_surface.h  
 )
 
 target_include_directories(renderer PUBLIC

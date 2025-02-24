@@ -1,4 +1,3 @@
-#include "logging-macros.h"
 #include <webgpu/webgpu.h>
 #include <GLFW/glfw3.h>
 
@@ -14,7 +13,6 @@
 int main() {
     Application app;   
 
-    LOG_INFO("Initializing application");
     if (!app.initialize()) {
         return -1;
     }

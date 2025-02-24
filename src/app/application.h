@@ -18,6 +18,7 @@ public:
 	void terminate();
 	void mainLoop();
 	bool isRunning();
+    void initPipeline();
     
     Window createWindow(uint32_t width, uint32_t height, const char* title);
     GLFWwindow* getWindowHandle() const {
@@ -28,7 +29,6 @@ public:
     ~Application();
 private:
 	Window m_window;
-	RendererContext m_context;
-
-	WGPUTextureView nextTextureView();
+	RDContext m_context;
+    WGPURenderPipeline m_pipeline;
 };
