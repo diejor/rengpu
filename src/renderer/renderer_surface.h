@@ -5,11 +5,9 @@
 struct RDSurface {
 	WGPUSurface surface;
 	WGPUTextureFormat format;
-	uint32_t width;
-	uint32_t height;
 
-	RDSurface() : surface(nullptr), format(WGPUTextureFormat_Undefined), width(0), height(0) {}
-	RDSurface(WGPUSurface s, WGPUTextureFormat f, uint32_t w, uint32_t h) : surface(s), format(f), width(w), height(h) {}
+	RDSurface() : surface(nullptr), format(WGPUTextureFormat_Undefined) {}
+	RDSurface(WGPUSurface s, WGPUTextureFormat f) : surface(s), format(f) {}
 
 	RDSurface(const RDSurface&) = delete;
 	RDSurface& operator=(const RDSurface&) = delete;
@@ -18,7 +16,7 @@ struct RDSurface {
 	// Only allow to move surfaces since WGPUSurface stores a pointer to window resources.
 	// ~~~~~~~~~~~~~
 	RDSurface(RDSurface&& other) noexcept :
-			surface(other.surface), format(other.format), width(other.width), height(other.height) {
+			surface(other.surface), format(other.format) {
 		other.surface = nullptr;
 	}
 	RDSurface& operator=(RDSurface&& other) noexcept {
@@ -26,8 +24,6 @@ struct RDSurface {
 			// Optionally release the current surface if owned.
 			surface = other.surface;
 			format = other.format;
-			width = other.width;
-			height = other.height;
 			other.surface = nullptr;
 		}
 		return *this;

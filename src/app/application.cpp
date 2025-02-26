@@ -1,11 +1,15 @@
+#include "backends/imgui_impl_glfw.h"
+#include "backends/imgui_impl_wgpu.h"
+
 #include <GLFW/glfw3.h>
 #include <glfw3webgpu.h>
+#include <imgui.h>
 #include <sys/types.h>
-#include <sys/ucontext.h>
 #include <webgpu/webgpu.h>
 
 #include <cstdint>
 #include <utility>
+#include <vector>
 
 #ifdef WEBGPU_BACKEND_WGPU
 #include <webgpu/wgpu.h>
@@ -14,79 +18,82 @@
 #include "application.h"
 #include "logging_macros.h"
 
-const char* shaderSource = R"(
+void onWindowResize(GLFWwindow* window, int width, int height) {
+	auto that = reinterpret_cast<Application*>(glfwGetWindowUserPointer(window));
 
-@vertex
-fn vs_main(@builtin(vertex_index) in_vertex_index: u32) -> @builtin(position) vec4f {
-    var p = vec2f(0.0, 0.0);
-    if (in_vertex_index == 0u) {
-        p = vec2f(-0.5, -0.5);
-    } else if (in_vertex_index == 1u) {
-        p = vec2f(0.5, -0.5);
-    } else {
-        p = vec2f(0.0, 0.5);
-    }
-    return vec4f(p, 0.0, 1.0);
+	// Call the actual class-member callback
+	if (that != nullptr) that->onResize(width, height);
 }
-
-@fragment
-fn fs_main() -> @location(0) vec4f {
-    return vec4f(0.0, 0.4, 1.0, 1.0);
-}
-
-    )";
-
 
 Application::Window Application::createWindow(uint32_t width, uint32_t height, const char* title) {
 	glfwInit();
 
-    glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-    glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
-    Window window = {
-        .handle = glfwCreateWindow(width, height, title, NULL, NULL),
-        .width = width,
-        .height = height,
-    };
+	glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
+	glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
+	Window window = {
+		.handle = glfwCreateWindow(width, height, title, NULL, NULL),
+		.width = width,
+		.height = height,
+	};
 
-    if (!window.handle) {
-        glfwTerminate();
-    }
+	if (!window.handle) {
+		glfwTerminate();
+	}
 
-    LOG_TRACE("Window created: %p", (void*)window.handle);
-    LOG_TRACE("  ~  size: %d x %d", window.width, window.height);
+	glfwSetWindowUserPointer(window.handle, this);
+	glfwSetFramebufferSizeCallback(window.handle, onWindowResize);
 
-    return window;
+	LOG_TRACE("Window created: %p", (void*)window.handle);
+	LOG_TRACE("  ~  size: %d x %d", window.width, window.height);
+
+	return window;
 }
 
 bool Application::initialize() {
-    u_int32_t width = 800;
-    u_int32_t height = 600;
+	u_int32_t width = 800;
+	u_int32_t height = 600;
 	m_window = createWindow(width, height, "WebGPU");
 
-    WGPUInstance instance = wgpuCreateInstance(nullptr);
-    LOG_TRACE("WebGPU instance created");
+	WGPUInstance instance = wgpuCreateInstance(nullptr);
+	LOG_TRACE("WebGPU instance created");
 
-    RDSurface rdSurface(
-            glfwCreateWindowWGPUSurface(instance, m_window.handle),
-            WGPUTextureFormat_Undefined, // format is deferred until surface is configured inside context
-            width,
-            height
-    );
+	RDSurface rdSurface(
+			glfwCreateWindowWGPUSurface(instance, m_window.handle),
+			WGPUTextureFormat_Undefined	 // format is deferred until surface is configured
+	);
 
 	m_context.initialize(instance, std::move(rdSurface));
+	m_context.configureSurface(width, height);
 
-    initPipeline();
+	initPipeline();
+	initBuffers();
 
-    LOG_INFO("Application initialized");
+	if (!initGui()) {
+		return false;
+	}
+
+	LOG_INFO("Application initialized");
 	return true;
 }
 
-Application::Application() {
-    LOG_TRACE("Application created");
-}
+bool Application::initGui() {
+	// Setup Dear ImGui context
+	IMGUI_CHECKVERSION();
+	ImGui::CreateContext();
+	ImGui::GetIO();
 
-void Application::terminate() {
-	glfwTerminate();
+	// Setup Platform/Renderer backends
+	ImGui_ImplGlfw_InitForOther(m_window.handle, true);
+	ImGui_ImplWGPU_InitInfo init_info = {};
+	init_info.Device = m_context.device;
+	init_info.NumFramesInFlight = 3;
+	init_info.RenderTargetFormat = m_context.rdSurface.format;
+	LOG_WARN("IMGUI: DepthStencilFormat is hardcoded to WGPUTextureFormat_Depth24PlusStencil8");
+	init_info.DepthStencilFormat = WGPUTextureFormat_Undefined;
+	ImGui_ImplWGPU_Init(&init_info);
+
+	LOG_INFO("GUI initialized");
+	return true;
 }
 
 void Application::mainLoop() {
@@ -130,8 +137,10 @@ void Application::mainLoop() {
 	WGPURenderPassEncoder renderPass = wgpuCommandEncoderBeginRenderPass(encoder, &renderPassDesc);
 
 	wgpuRenderPassEncoderSetPipeline(renderPass, m_pipeline);
-	wgpuRenderPassEncoderDraw(renderPass, 3, 1, 0, 0);
+	wgpuRenderPassEncoderSetVertexBuffer(renderPass, 0, m_vertexBuffer, 0, wgpuBufferGetSize(m_vertexBuffer));
+	wgpuRenderPassEncoderDraw(renderPass, m_vertexCount, 1, 0, 0);
 
+	//updateGui(renderPass);
 	wgpuRenderPassEncoderEnd(renderPass);
 	wgpuRenderPassEncoderRelease(renderPass);
 
@@ -150,30 +159,20 @@ void Application::mainLoop() {
 	wgpuSurfacePresent(m_context.rdSurface.surface);
 #endif
 
-    m_context.polltick();
+	m_context.polltick();
 }
 
-bool Application::isRunning() {
-	return !glfwWindowShouldClose(m_window.handle);
+void Application::onResize(int width, int height) {
+	m_window.width = width;
+	m_window.height = height;
+
+	m_context.configureSurface(width, height);
+
+	LOG_TRACE("Window resized to %d x %d", width, height);
 }
 
 void Application::initPipeline() {
-    WGPUShaderModuleWGSLDescriptor shaderDesc = {
-        .chain = {
-            .next = nullptr,
-            .sType = WGPUSType_ShaderModuleWGSLDescriptor,
-        },
-        .code = shaderSource,
-    };
-
-	WGPUShaderModuleDescriptor moduleDesc = {
-		.nextInChain = reinterpret_cast<WGPUChainedStruct*>(&shaderDesc),
-		.label = "My Shader Module",
-		.hintCount = 0,
-		.hints = nullptr,
-	};
-
-	WGPUShaderModule module = wgpuDeviceCreateShaderModule(m_context.device, &moduleDesc);
+	WGPUShaderModule module = m_context.loadShaderModule("resources/triangles.wgsl");
 
 	WGPUBlendState blendState = {
         .color = {
@@ -195,7 +194,28 @@ void Application::initPipeline() {
 		.writeMask = WGPUColorWriteMask_All,
 	};
 
-	const WGPUFragmentState fragmentState = {
+	WGPUVertexAttribute posAttribute = {
+		.format = WGPUVertexFormat_Float32x2,
+		.offset = 0,
+		.shaderLocation = 0,
+	};
+
+	WGPUVertexAttribute colorAttribute = {
+		.format = WGPUVertexFormat_Float32x3,
+		.offset = 2 * sizeof(float),
+		.shaderLocation = 1,
+	};
+
+	std::vector<WGPUVertexAttribute> attributes = { posAttribute, colorAttribute };
+
+	WGPUVertexBufferLayout vertexBufferLayout = {
+		.arrayStride = 5 * sizeof(float),
+		.stepMode = WGPUVertexStepMode_Vertex,
+		.attributeCount = 2,
+		.attributes = attributes.data(),
+	};
+
+	WGPUFragmentState fragmentState = {
 		.nextInChain = nullptr,
 		.module = module,
 		.entryPoint = "fs_main",
@@ -215,8 +235,8 @@ void Application::initPipeline() {
             .entryPoint = "vs_main",
             .constantCount = 0,
             .constants = nullptr,
-            .bufferCount = 0,
-            .buffers = nullptr,
+            .bufferCount = 1,
+            .buffers = &vertexBufferLayout,
         },
         .primitive = {
             .nextInChain = nullptr,
@@ -236,12 +256,100 @@ void Application::initPipeline() {
     };
 
 	m_pipeline = wgpuDeviceCreateRenderPipeline(m_context.device, &pipelineDesc);
-    LOG_INFO("Pipeline initialized");
+	LOG_INFO("Pipeline initialized");
+}
+
+void Application::updateGui(WGPURenderPassEncoder pass) {
+	// Begin new ImGui frame.
+
+	ImGui_ImplWGPU_NewFrame();
+	ImGui_ImplGlfw_NewFrame();
+	ImGui::NewFrame();
+
+	// Create a window for vertex data.
+	if (ImGui::Begin("Vertex Data")) {
+		for (size_t i = 0; i < m_vertexData.size(); i++) {
+			char label[64];
+			snprintf(label, sizeof(label), "Vertex %zu", i);
+			if (ImGui::TreeNode(label)) {
+				ImGui::DragFloat("Position X", &m_vertexData[i].position.x, 0.01f, -1.0f, 1.0f);
+				ImGui::DragFloat("Position Y", &m_vertexData[i].position.y, 0.01f, -1.0f, 1.0f);
+				ImGui::DragFloat("Color R", &m_vertexData[i].color.r, 0.01f, 0.0f, 1.0f);
+				ImGui::DragFloat("Color G", &m_vertexData[i].color.g, 0.01f, 0.0f, 1.0f);
+				ImGui::DragFloat("Color B", &m_vertexData[i].color.b, 0.01f, 0.0f, 1.0f);
+				ImGui::TreePop();
+			}
+		}
+	}
+	ImGui::End();
+
+	// Render ImGui
+	ImGui::Render();
+	ImGui_ImplWGPU_RenderDrawData(ImGui::GetDrawData(), pass);
+
+	// Optionally, update the GPU vertex buffer if data has changed.
+	wgpuQueueWriteBuffer(m_context.queue, m_vertexBuffer, 0, m_vertexData.data(), m_vertexData.size() * sizeof(Vertex));
+}
+
+void Application::initBuffers() {
+	// Define your vertex data
+	m_vertexData = {
+		{ { -0.5f, -0.5f }, { 1.0f, 0.0f, 0.0f } },	 { { +0.8f, -0.5f }, { 0.0f, 1.0f, 0.0f } },
+		{ { +0.0f, +0.5f }, { 0.0f, 0.0f, 1.0f } },	 { { -0.55f, -0.5f }, { 1.0f, 1.0f, 0.0f } },
+		{ { -0.05f, +0.5f }, { 1.0f, 0.0f, 1.0f } }, { { -0.55f, +0.5f }, { 0.0f, 1.0f, 1.0f } },
+	};
+
+	m_vertexCount = static_cast<uint32_t>(m_vertexData.size());
+
+	// Create the GPU vertex buffer.
+	WGPUBufferDescriptor bufferDesc = {
+		.nextInChain = nullptr,
+		.label = "My Vertex Buffer",
+		.usage = WGPUBufferUsage_Vertex | WGPUBufferUsage_CopyDst,
+		.size = m_vertexCount * sizeof(Vertex),
+		.mappedAtCreation = false,
+	};
+
+	m_vertexBuffer = wgpuDeviceCreateBuffer(m_context.device, &bufferDesc);
+
+	// Write the vertex data to the buffer.
+	wgpuQueueWriteBuffer(m_context.queue, m_vertexBuffer, 0, m_vertexData.data(), bufferDesc.size);
+
+	LOG_INFO("Buffers initialized");
+}
+
+Application::Application() {
+	LOG_INFO("Application created");
+}
+
+bool Application::isRunning() {
+	return !glfwWindowShouldClose(m_window.handle);
+}
+
+void Application::terminate() {
+	if (m_window.handle != nullptr) {
+		glfwDestroyWindow(m_window.handle);
+		LOG_TRACE("Application window destroyed");
+	}
+	if (m_pipeline != nullptr) {
+		wgpuRenderPipelineRelease(m_pipeline);
+		LOG_TRACE("Pipeline destroyed");
+	}
+	if (m_vertexBuffer != nullptr) {
+		wgpuBufferRelease(m_vertexBuffer);
+		LOG_TRACE("Buffers destroyed");
+	}
+	terminateGui();
+	glfwTerminate();
+}
+
+void Application::terminateGui() {
+	ImGui_ImplWGPU_Shutdown();
+	ImGui_ImplGlfw_Shutdown();
+	ImGui::DestroyContext();
+	LOG_INFO("GUI terminated");
 }
 
 Application::~Application() {
-    if (m_window.handle != nullptr) {
-        glfwDestroyWindow(m_window.handle);
-        LOG_INFO("Application window destroyed");
-    }
+	LOG_INFO("Application destroyed");
 }

@@ -2,13 +2,15 @@
 
 #include "renderer_surface.h"
 #include <webgpu/webgpu.h>
+#include <string>
 
 class Window;
 
 struct RDContext {
 	void initialize(WGPUInstance p_instance, RDSurface p_rdSurface);
-    void configureSurface(RDSurface& p_rdSurface);
+    void configureSurface(int width, int height);
     void polltick();
+    WGPUShaderModule loadShaderModule(const std::string& filename);
     WGPUTextureView nextTextureView();
 
 	RDContext();
@@ -22,4 +24,5 @@ struct RDContext {
 	WGPUAdapter adapter;
 	WGPUDevice device;
 	WGPUQueue queue;
+    bool yieldToBrowser;
 };

@@ -22,6 +22,7 @@ target_link_libraries(app PRIVATE
     glfw3webgpu
     renderer
     utils
+    imgui
 )
 
 if(UNIX AND NOT APPLE)

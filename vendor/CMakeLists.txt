@@ -8,3 +8,4 @@ endif()
 
 add_subdirectory(webgpu)
 add_subdirectory(glfw3webgpu)
+add_subdirectory(imgui)
