@@ -8,7 +8,7 @@ class Window;
 
 struct RDContext {
 	void initialize(WGPUInstance p_instance, RDSurface p_rdSurface);
-    void configureSurface(int width, int height);
+    void configureSurface(const int& width, const int& height);
     void polltick();
     WGPUShaderModule loadShaderModule(const std::string& filename);
     WGPUTextureView nextTextureView();

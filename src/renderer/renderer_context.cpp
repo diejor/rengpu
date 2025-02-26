@@ -187,7 +187,7 @@ RDContext::~RDContext() {
 	LOG_INFO("Renderer context destroyed");
 }
 
-void RDContext::configureSurface(int width, int height) {
+void RDContext::configureSurface(const int& width, const int& height) {
 	ERR(adapter == nullptr, "Adapter is null, possibly context is not initialized");
 	ERR(device == nullptr, "Device is null, possibly context is not initialized");
 

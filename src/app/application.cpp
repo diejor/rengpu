@@ -4,6 +4,7 @@
 #include <GLFW/glfw3.h>
 #include <glfw3webgpu.h>
 #include <imgui.h>
+#include <stdint.h>
 #include <sys/types.h>
 #include <webgpu/webgpu.h>
 
@@ -25,11 +26,10 @@ void onWindowResize(GLFWwindow* window, int width, int height) {
 	if (that != nullptr) that->onResize(width, height);
 }
 
-Application::Window Application::createWindow(uint32_t width, uint32_t height, const char* title) {
+Application::Window Application::createWindow(int width, int height, const char* title) {
 	glfwInit();
 
 	glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-	glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
 	Window window = {
 		.handle = glfwCreateWindow(width, height, title, NULL, NULL),
 		.width = width,
@@ -84,11 +84,14 @@ bool Application::initGui() {
 
 	// Setup Platform/Renderer backends
 	ImGui_ImplGlfw_InitForOther(m_window.handle, true);
+#ifdef __EMSCRIPTEN__
+	ImGui_ImplGlfw_InstallEmscriptenCallbacks(window, "#canvas");
+#endif
 	ImGui_ImplWGPU_InitInfo init_info = {};
 	init_info.Device = m_context.device;
 	init_info.NumFramesInFlight = 3;
 	init_info.RenderTargetFormat = m_context.rdSurface.format;
-	LOG_WARN("IMGUI: DepthStencilFormat is hardcoded to WGPUTextureFormat_Depth24PlusStencil8");
+	LOG_WARN("IMGUI: DepthStencilFormat is undefined");
 	init_info.DepthStencilFormat = WGPUTextureFormat_Undefined;
 	ImGui_ImplWGPU_Init(&init_info);
 
@@ -98,7 +101,6 @@ bool Application::initGui() {
 
 void Application::mainLoop() {
 	glfwPollEvents();
-
 	WGPUTextureView texture_view = m_context.nextTextureView();
 	if (!texture_view) {
 		return;
@@ -120,7 +122,7 @@ void Application::mainLoop() {
 		.clearValue = { 0.1f, 0.1f, 0.1f, 1.0f },
 	};
 
-#ifndef WEBGPU_BACKEND_WGPU
+#ifndef EBGPU_BACKEND_WGPU
 	colorAttachment.depthSlice = WGPU_DEPTH_SLICE_UNDEFINED;
 #endif
 
@@ -140,7 +142,23 @@ void Application::mainLoop() {
 	wgpuRenderPassEncoderSetVertexBuffer(renderPass, 0, m_vertexBuffer, 0, wgpuBufferGetSize(m_vertexBuffer));
 	wgpuRenderPassEncoderDraw(renderPass, m_vertexCount, 1, 0, 0);
 
-	//updateGui(renderPass);
+    updateGui();
+
+    // Not sure how to check that FrameBuffer size is valid just in time when imgui has to be rendered.
+    // The FrameBuffer size might change in the middle of the frame, after glfwPollEvents() is called.
+    // In that case, onResize configured the surface with an old size, and the new size is not yet configured.
+    // So, we need to check if the FrameBuffer size is the same as the window size.
+    //
+    // This is a workaround for the issue, but there should be a way to check if the FrameBuffer size is valid
+    // without checking the window size every frame.
+    // I tried storing a skipFrame bool in the class and adding two glfwPollEvents() calls, one to configure 
+    // the surface when possible, and the other to check if the FrameBuffer size is valid. But it didn't work.
+   	int currentWidth, currentHeight;
+	glfwGetFramebufferSize(m_window.handle, &currentWidth, &currentHeight);
+	if (currentWidth == m_window.width && currentHeight == m_window.height) {
+		ImGui_ImplWGPU_RenderDrawData(ImGui::GetDrawData(), renderPass);
+	}
+
 	wgpuRenderPassEncoderEnd(renderPass);
 	wgpuRenderPassEncoderRelease(renderPass);
 
@@ -162,13 +180,12 @@ void Application::mainLoop() {
 	m_context.polltick();
 }
 
-void Application::onResize(int width, int height) {
-	m_window.width = width;
-	m_window.height = height;
+void Application::onResize(const int& width, const int& height) {
+	LOG_TRACE("Window resized to %d x %d", width, height);
 
 	m_context.configureSurface(width, height);
-
-	LOG_TRACE("Window resized to %d x %d", width, height);
+	m_window.width = width;
+	m_window.height = height;
 }
 
 void Application::initPipeline() {
@@ -259,24 +276,18 @@ void Application::initPipeline() {
 	LOG_INFO("Pipeline initialized");
 }
 
-void Application::updateGui(WGPURenderPassEncoder pass) {
-	// Begin new ImGui frame.
-
+void Application::updateGui() {
 	ImGui_ImplWGPU_NewFrame();
 	ImGui_ImplGlfw_NewFrame();
 	ImGui::NewFrame();
 
-	// Create a window for vertex data.
 	if (ImGui::Begin("Vertex Data")) {
 		for (size_t i = 0; i < m_vertexData.size(); i++) {
 			char label[64];
 			snprintf(label, sizeof(label), "Vertex %zu", i);
 			if (ImGui::TreeNode(label)) {
-				ImGui::DragFloat("Position X", &m_vertexData[i].position.x, 0.01f, -1.0f, 1.0f);
-				ImGui::DragFloat("Position Y", &m_vertexData[i].position.y, 0.01f, -1.0f, 1.0f);
-				ImGui::DragFloat("Color R", &m_vertexData[i].color.r, 0.01f, 0.0f, 1.0f);
-				ImGui::DragFloat("Color G", &m_vertexData[i].color.g, 0.01f, 0.0f, 1.0f);
-				ImGui::DragFloat("Color B", &m_vertexData[i].color.b, 0.01f, 0.0f, 1.0f);
+				ImGui::SliderFloat2("Position", &m_vertexData[i].position.x, -1.0f, 1.0f);
+				ImGui::ColorPicker3("Color", &m_vertexData[i].color.r);
 				ImGui::TreePop();
 			}
 		}
@@ -284,10 +295,9 @@ void Application::updateGui(WGPURenderPassEncoder pass) {
 	ImGui::End();
 
 	// Render ImGui
+	ImGui::EndFrame();
 	ImGui::Render();
-	ImGui_ImplWGPU_RenderDrawData(ImGui::GetDrawData(), pass);
 
-	// Optionally, update the GPU vertex buffer if data has changed.
 	wgpuQueueWriteBuffer(m_context.queue, m_vertexBuffer, 0, m_vertexData.data(), m_vertexData.size() * sizeof(Vertex));
 }
 

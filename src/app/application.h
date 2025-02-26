@@ -11,8 +11,8 @@ class Application {
 public:
 	struct Window {
 		GLFWwindow* handle;
-		uint32_t width;
-		uint32_t height;
+		int width;
+		int height;
 	};
 
 	bool initialize();
@@ -20,13 +20,13 @@ public:
 	void terminate();
 	void terminateGui();
 	void mainLoop();
-	void updateGui(WGPURenderPassEncoder pass);
-    void onResize(int width, int height);
+	void updateGui();
+    void onResize(const int& width, const int& height);
 	bool isRunning();
 	void initPipeline();
 	void initBuffers();
 
-	Window createWindow(uint32_t width, uint32_t height, const char* title);
+	Window createWindow(int width, int height, const char* title);
 	GLFWwindow* getWindowHandle() const {
 		return m_window.handle;
 	}
@@ -50,6 +50,8 @@ public:
 private:
 	Window m_window;
 	RDContext m_context;
+    bool m_skipFrame;
+    bool m_insideView;
 	WGPURenderPipeline m_pipeline;
 	WGPUBuffer m_vertexBuffer;
 	std::vector<Vertex> m_vertexData;

@@ -3,6 +3,7 @@ build/
 build-web/
 vcpkg_installed/
 compile_commands.json
+*.ini
 
 # Visual Studio
 out
