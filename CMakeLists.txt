@@ -4,6 +4,9 @@ project(rengpu
     LANGUAGES CXX C
 )
 
+option ( TRACY_ENABLE " " ON )
+option ( TRACY_ON_DEMAND " " ON )
+
 add_subdirectory(vendor)
 add_subdirectory(src)
 

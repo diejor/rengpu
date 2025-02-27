@@ -1,9 +1,9 @@
 add_library(renderer STATIC
-    renderer_context.h
-    renderer_context.cpp
-    renderer_surface.h  
-    renderer_driver.h
-    renderer_driver.cpp
+    RendererContext.hpp
+    RendererContext.cpp
+    RendererSurface.hpp  
+    RendererDriver.hpp
+    RendererDriver.cpp
 )
 
 target_include_directories(renderer PUBLIC
@@ -11,6 +11,7 @@ target_include_directories(renderer PUBLIC
 )
 
 target_link_libraries(renderer PRIVATE
+    Tracy::TracyClient
     webgpu
     glfw3webgpu
     glfw

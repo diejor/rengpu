@@ -1,4 +1,4 @@
-#include "renderer_context.h"
+#include "RendererContext.hpp"
 
 #include "logging_macros.h"
 
@@ -20,6 +20,8 @@
 #ifdef __EMSCRIPTEN__
 #include <emscripten.h>
 #endif	// __EMSCRIPTEN__
+
+#include "tracy/Tracy.hpp"
 
 static void onAdapterRequestEnded(
 		WGPURequestAdapterStatus status,
@@ -54,7 +56,7 @@ void onDeviceRequestEnded(
     context.yieldToBrowser = false;
 }
 
-void RDContext::initialize(WGPUInstance p_instance, RDSurface p_rdSurface) {
+void RDContext::Initialize(WGPUInstance p_instance, RDSurface p_rdSurface) {
 	instance = p_instance;
 	rdSurface = std::move(p_rdSurface);
 
@@ -120,7 +122,7 @@ void RDContext::initialize(WGPUInstance p_instance, RDSurface p_rdSurface) {
 	LOG_INFO("Renderer context initialized");
 }
 
-WGPUShaderModule RDContext::loadShaderModule(const std::string& filename) {
+WGPUShaderModule RDContext::LoadShaderModule(const std::string& filename) {
     std::ifstream file(filename, std::ios::binary);
     if (!file) {
         throw std::runtime_error("Failed to open shader: " + filename);
@@ -160,6 +162,7 @@ RDContext::RDContext() {
 RDContext::~RDContext() {
 	if (instance) {
 		wgpuInstanceRelease(instance);
+        LOG_TRACE("Instance released");
 	} else {
 		LOG_WARN("Instance is null when destroying renderer context");
 	}
@@ -171,23 +174,27 @@ RDContext::~RDContext() {
 	// }
 	if (adapter) {
 		wgpuAdapterRelease(adapter);
+        LOG_TRACE("Adapter released");
 	} else {
 		LOG_WARN("Adapter is null when destroying renderer context");
 	}
 	if (device) {
 		wgpuDeviceRelease(device);
+        LOG_TRACE("Device released");
 	} else {
 		LOG_WARN("Device is null when destroying renderer context");
 	}
 	if (queue) {
 		wgpuQueueRelease(queue);
+        LOG_TRACE("Queue released");
 	} else {
 		LOG_WARN("Queue is null when destroying renderer context");
 	}
 	LOG_INFO("Renderer context destroyed");
 }
 
-void RDContext::configureSurface(const int& width, const int& height) {
+void RDContext::ConfigureSurface(const int& width, const int& height) {
+    ZoneScoped;
 	ERR(adapter == nullptr, "Adapter is null, possibly context is not initialized");
 	ERR(device == nullptr, "Device is null, possibly context is not initialized");
 
@@ -211,7 +218,7 @@ void RDContext::configureSurface(const int& width, const int& height) {
 	LOG_TRACE("Surface configured");
 }
 
-WGPUTextureView RDContext::nextTextureView() {
+WGPUTextureView RDContext::NextTextureView() {
 	WGPUSurfaceTexture surface_texture = {};
 	wgpuSurfaceGetCurrentTexture(rdSurface.surface, &surface_texture);
 
@@ -239,7 +246,8 @@ WGPUTextureView RDContext::nextTextureView() {
 	return target_view;
 }
 
-void RDContext::polltick() {
+void RDContext::Polltick() {
+    ZoneScoped;
     #if defined(WEBGPU_BACKEND_DAWN)
     wgpuDeviceTick(device);
 #elif defined(WEBGPU_BACKEND_WGPU)

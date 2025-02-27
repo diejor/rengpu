@@ -1,17 +1,17 @@
 #pragma once
 
-#include "renderer_surface.h"
+#include "RendererSurface.hpp"
 #include <webgpu/webgpu.h>
 #include <string>
 
 class Window;
 
 struct RDContext {
-	void initialize(WGPUInstance p_instance, RDSurface p_rdSurface);
-    void configureSurface(const int& width, const int& height);
-    void polltick();
-    WGPUShaderModule loadShaderModule(const std::string& filename);
-    WGPUTextureView nextTextureView();
+	void Initialize(WGPUInstance p_instance, RDSurface p_rdSurface);
+    void ConfigureSurface(const int& width, const int& height);
+    void Polltick();
+    WGPUShaderModule LoadShaderModule(const std::string& filename);
+    WGPUTextureView NextTextureView();
 
 	RDContext();
 	~RDContext();

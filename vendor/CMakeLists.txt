@@ -6,6 +6,7 @@ else()
 endif()
 # add glfw before webgpu so the version can be decided
 
+add_subdirectory(tracy)
 add_subdirectory(webgpu)
 add_subdirectory(glfw3webgpu)
 add_subdirectory(imgui)

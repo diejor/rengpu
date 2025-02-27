@@ -1,6 +1,6 @@
 add_executable(app 
-    main.cpp 
-    application.cpp 
+    Main.cpp 
+    Application.cpp 
 )
 
 
@@ -12,7 +12,7 @@ set_target_properties(app PROPERTIES
 )
 
 target_include_directories(app PUBLIC
-    application.h
+    Application.hpp
 )
 
 # include directories here
@@ -23,6 +23,7 @@ target_link_libraries(app PRIVATE
     renderer
     utils
     imgui
+    Tracy::TracyClient
 )
 
 if(UNIX AND NOT APPLE)

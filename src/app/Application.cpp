@@ -16,8 +16,9 @@
 #include <webgpu/wgpu.h>
 #endif	// WEBGPU_BACKEND_WGPU
 
-#include "application.h"
+#include "Application.hpp"
 #include "logging_macros.h"
+#include "tracy/Tracy.hpp"
 
 void onWindowResize(GLFWwindow* window, int width, int height) {
 	auto that = reinterpret_cast<Application*>(glfwGetWindowUserPointer(window));
@@ -26,7 +27,7 @@ void onWindowResize(GLFWwindow* window, int width, int height) {
 	if (that != nullptr) that->onResize(width, height);
 }
 
-Application::Window Application::createWindow(int width, int height, const char* title) {
+Application::Window Application::CreateWindow(int width, int height, const char* title) {
 	glfwInit();
 
 	glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
@@ -49,10 +50,10 @@ Application::Window Application::createWindow(int width, int height, const char*
 	return window;
 }
 
-bool Application::initialize() {
+bool Application::Initialize() {
 	u_int32_t width = 800;
 	u_int32_t height = 600;
-	m_window = createWindow(width, height, "WebGPU");
+	m_window = CreateWindow(width, height, "WebGPU");
 
 	WGPUInstance instance = wgpuCreateInstance(nullptr);
 	LOG_TRACE("WebGPU instance created");
@@ -62,13 +63,13 @@ bool Application::initialize() {
 			WGPUTextureFormat_Undefined	 // format is deferred until surface is configured
 	);
 
-	m_context.initialize(instance, std::move(rdSurface));
-	m_context.configureSurface(width, height);
+	m_context.Initialize(instance, std::move(rdSurface));
+	m_context.ConfigureSurface(width, height);
 
-	initPipeline();
-	initBuffers();
+	InitPipeline();
+	InitBuffers();
 
-	if (!initGui()) {
+	if (!InitGui()) {
 		return false;
 	}
 
@@ -76,7 +77,7 @@ bool Application::initialize() {
 	return true;
 }
 
-bool Application::initGui() {
+bool Application::InitGui() {
 	// Setup Dear ImGui context
 	IMGUI_CHECKVERSION();
 	ImGui::CreateContext();
@@ -85,7 +86,7 @@ bool Application::initGui() {
 	// Setup Platform/Renderer backends
 	ImGui_ImplGlfw_InitForOther(m_window.handle, true);
 #ifdef __EMSCRIPTEN__
-	ImGui_ImplGlfw_InstallEmscriptenCallbacks(window, "#canvas");
+	ImGui_ImplGlfw_InstallEmscriptenCallbacks(m_window.handle, "#canvas");
 #endif
 	ImGui_ImplWGPU_InitInfo init_info = {};
 	init_info.Device = m_context.device;
@@ -99,9 +100,11 @@ bool Application::initGui() {
 	return true;
 }
 
-void Application::mainLoop() {
+void Application::MainLoop() {
+    FrameMark;
+    ZoneScoped;
 	glfwPollEvents();
-	WGPUTextureView texture_view = m_context.nextTextureView();
+	WGPUTextureView texture_view = m_context.NextTextureView();
 	if (!texture_view) {
 		return;
 	}
@@ -142,7 +145,7 @@ void Application::mainLoop() {
 	wgpuRenderPassEncoderSetVertexBuffer(renderPass, 0, m_vertexBuffer, 0, wgpuBufferGetSize(m_vertexBuffer));
 	wgpuRenderPassEncoderDraw(renderPass, m_vertexCount, 1, 0, 0);
 
-    updateGui();
+    UpdateGui();
 
     // Not sure how to check that FrameBuffer size is valid just in time when imgui has to be rendered.
     // The FrameBuffer size might change in the middle of the frame, after glfwPollEvents() is called.
@@ -177,19 +180,20 @@ void Application::mainLoop() {
 	wgpuSurfacePresent(m_context.rdSurface.surface);
 #endif
 
-	m_context.polltick();
+	m_context.Polltick();
 }
 
 void Application::onResize(const int& width, const int& height) {
+    ZoneScoped;
 	LOG_TRACE("Window resized to %d x %d", width, height);
 
-	m_context.configureSurface(width, height);
+	m_context.ConfigureSurface(width, height);
 	m_window.width = width;
 	m_window.height = height;
 }
 
-void Application::initPipeline() {
-	WGPUShaderModule module = m_context.loadShaderModule("resources/triangles.wgsl");
+void Application::InitPipeline() {
+	WGPUShaderModule module = m_context.LoadShaderModule("resources/triangles.wgsl");
 
 	WGPUBlendState blendState = {
         .color = {
@@ -276,7 +280,8 @@ void Application::initPipeline() {
 	LOG_INFO("Pipeline initialized");
 }
 
-void Application::updateGui() {
+void Application::UpdateGui() {
+    ZoneScoped;
 	ImGui_ImplWGPU_NewFrame();
 	ImGui_ImplGlfw_NewFrame();
 	ImGui::NewFrame();
@@ -301,7 +306,7 @@ void Application::updateGui() {
 	wgpuQueueWriteBuffer(m_context.queue, m_vertexBuffer, 0, m_vertexData.data(), m_vertexData.size() * sizeof(Vertex));
 }
 
-void Application::initBuffers() {
+void Application::InitBuffers() {
 	// Define your vertex data
 	m_vertexData = {
 		{ { -0.5f, -0.5f }, { 1.0f, 0.0f, 0.0f } },	 { { +0.8f, -0.5f }, { 0.0f, 1.0f, 0.0f } },
@@ -336,7 +341,7 @@ bool Application::isRunning() {
 	return !glfwWindowShouldClose(m_window.handle);
 }
 
-void Application::terminate() {
+void Application::Terminate() {
 	if (m_window.handle != nullptr) {
 		glfwDestroyWindow(m_window.handle);
 		LOG_TRACE("Application window destroyed");
@@ -349,11 +354,11 @@ void Application::terminate() {
 		wgpuBufferRelease(m_vertexBuffer);
 		LOG_TRACE("Buffers destroyed");
 	}
-	terminateGui();
+	TerminateGui();
 	glfwTerminate();
 }
 
-void Application::terminateGui() {
+void Application::TerminateGui() {
 	ImGui_ImplWGPU_Shutdown();
 	ImGui_ImplGlfw_Shutdown();
 	ImGui::DestroyContext();

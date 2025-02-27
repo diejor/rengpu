@@ -8,28 +8,28 @@
 #include <cassert>
 #include <cstring>
 
-#include "application.h"
+#include "Application.hpp"
 
 int main() {
     Application app;   
 
-    if (!app.initialize()) {
+    if (!app.Initialize()) {
         return -1;
     }
     
     #ifdef __EMSCRIPTEN__
 	auto callback = [](void *arg) {
 		Application* pApp = reinterpret_cast<Application*>(arg);
-		pApp->mainLoop(); // 4. We can use the application object
+		pApp->MainLoop(); // 4. We can use the application object
 	};
 	emscripten_set_main_loop_arg(callback, &app, 0, true);
 #else // __EMSCRIPTEN__
 	while (app.isRunning()) {
-		app.mainLoop();
+		app.MainLoop();
 	}
 #endif // __EMSCRIPTEN__
 
-    app.terminate();
+    app.Terminate();
 
     return 0;
 }
