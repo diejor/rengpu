@@ -4,6 +4,7 @@ build-web/
 vcpkg_installed/
 compile_commands.json
 *.ini
+.vscode
 
 # Visual Studio
 out
