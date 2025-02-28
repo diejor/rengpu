@@ -16,12 +16,14 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <iostream>
 
 #ifdef __EMSCRIPTEN__
 #include <emscripten.h>
 #endif	// __EMSCRIPTEN__
 
 #include "tracy/Tracy.hpp"
+
 
 static void onAdapterRequestEnded(
 		WGPURequestAdapterStatus status,
@@ -123,7 +125,8 @@ void RDContext::Initialize(WGPUInstance p_instance, RDSurface p_rdSurface) {
 }
 
 WGPUShaderModule RDContext::LoadShaderModule(const std::string& filename) {
-    std::ifstream file(filename, std::ios::binary);
+	std::cout << std::string(RESOURCE_DIR) << std::endl;
+    std::ifstream file(std::string(RESOURCE_DIR) + filename, std::ios::binary);
     if (!file) {
         throw std::runtime_error("Failed to open shader: " + filename);
     }

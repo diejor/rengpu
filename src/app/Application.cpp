@@ -51,8 +51,8 @@ Application::Window Application::CreateWindow(int width, int height, const char*
 }
 
 bool Application::Initialize() {
-	u_int32_t width = 800;
-	u_int32_t height = 600;
+	int width = 800;
+	int height = 600;
 	m_window = CreateWindow(width, height, "WebGPU");
 
 	WGPUInstance instance = wgpuCreateInstance(nullptr);
@@ -193,7 +193,7 @@ void Application::onResize(const int& width, const int& height) {
 }
 
 void Application::InitPipeline() {
-	WGPUShaderModule module = m_context.LoadShaderModule("resources/triangles.wgsl");
+	WGPUShaderModule module = m_context.LoadShaderModule("triangles.wgsl");
 
 	WGPUBlendState blendState = {
         .color = {

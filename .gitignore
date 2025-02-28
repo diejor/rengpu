@@ -9,6 +9,11 @@ compile_commands.json
 out
 .vs
 
+# CLion
+.idea
+cmake-build-*
+
+
 # CMake
 .workspace/
 

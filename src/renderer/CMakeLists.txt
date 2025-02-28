@@ -6,8 +6,11 @@ add_library(renderer STATIC
     RendererDriver.cpp
 )
 
-target_include_directories(renderer PUBLIC
-    ${CMAKE_CURRENT_SOURCE_DIR}
+set_target_properties(renderer PROPERTIES
+    CXX_STANDARD 20
+    CXX_STANDARD_REQUIRED ON
+    CXX_EXTENSIONS OFF
+    COMPILE_WARNINGS_AS_ERRORS ON
 )
 
 target_link_libraries(renderer PRIVATE

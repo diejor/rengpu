@@ -1,6 +1,6 @@
 #pragma once
 
-#include "RendererContext.hpp"
+#include "../renderer/RendererContext.hpp"
 #include "webgpu/webgpu.h"
 
 #include <GLFW/glfw3.h>
@@ -27,9 +27,6 @@ public:
 	void InitBuffers();
 
 	Window CreateWindow(int width, int height, const char* title);
-	GLFWwindow* GetWindowHandle() const {
-		return m_window.handle;
-	}
 
 	Application();
 	~Application();

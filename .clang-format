@@ -32,7 +32,7 @@ AllowShortFunctionsOnASingleLine: Empty
 # AlwaysBreakAfterReturnType: None
 # AlwaysBreakBeforeMultilineStrings: false
 AlwaysBreakTemplateDeclarations: Yes
-BreakAfterReturnType: Automatic
+# BreakAfterReturnType: Automatic
 # AttributeMacros:
 #   - __capability
 BinPackArguments: false
