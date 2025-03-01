@@ -26,6 +26,8 @@ target_link_libraries(app PRIVATE
     Tracy::TracyClient
 )
 
+
+
 if(UNIX AND NOT APPLE)
     set_target_properties(app PROPERTIES INSTALL_RPATH "$ORIGIN")
 endif()
@@ -52,14 +54,14 @@ if (EMSCRIPTEN)
         -sUSE_WEBGPU
         -sASYNCIFY
         --preload-file "${CMAKE_SOURCE_DIR}/resources@/resources"
-        --shell-file "${CMAKE_CURRENT_SOURCE_DIR}/${SHELL_FILE}"
+        --shell-file "${CMAKE_SOURCE_DIR}/resources/${SHELL_FILE}"
         -sALLOW_MEMORY_GROWTH
     )
 
     set_property(
         TARGET app
         PROPERTY LINK_DEPENDS
-        "${CMAKE_CURRENT_SOURCE_DIR}/${SHELL_FILE}"
+        "${CMAKE_SOURCE_DIR}/resources/${SHELL_FILE}"
     )
 
     set_target_properties(app PROPERTIES 

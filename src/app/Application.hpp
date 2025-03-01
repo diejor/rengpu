@@ -49,6 +49,9 @@ private:
 	RDContext m_context;
 	WGPURenderPipeline m_pipeline;
 	WGPUBuffer m_vertexBuffer;
+    WGPUBuffer m_indexBuffer;
+    WGPUBuffer m_uniformBuffer;
 	std::vector<Vertex> m_vertexData;
-	uint32_t m_vertexCount;
+    std::vector<uint16_t> m_indexData;
+	uint32_t m_indexCount;
 };

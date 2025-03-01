@@ -74,18 +74,20 @@ static const char *RESET_COLOR = "\033[0m";
 
 #else
 
-#define LOG(logger, logLevel, fmt, ...)                                          \
-    do {                                                                       \
-        if ((logLevel) <= (logger).level) {                                    \
-            constexpr int BUF_SIZE = 1024;                                     \
-            char _log_buf[BUF_SIZE];                                           \
-            std::snprintf(_log_buf, BUF_SIZE, fmt __VA_OPT__(, __VA_ARGS__));    \
-            std::fprintf((logger).stream,                                      \
-                         "%s[%s:%d %s()][%s]%s %s\n",                          \
-                         LOG_COLORS[logLevel], __FILE__, __LINE__, __func__,     \
-                         LOG_LEVEL_STR[logLevel], RESET_COLOR, _log_buf);         \
-        }                                                                      \
+#define LOG(logger, logLevel, fmt, ...)                                           \
+    do {                                                                        \
+        if ((logLevel) <= (logger).level) {                                     \
+            constexpr int BUF_SIZE = 1024;                                      \
+            char _log_buf[BUF_SIZE];                                            \
+            std::snprintf(_log_buf, BUF_SIZE, fmt __VA_OPT__(, __VA_ARGS__));     \
+            TracyMessage(_log_buf, strlen(_log_buf));  /* Send message to Tracy */\
+            std::fprintf((logger).stream,                                     \
+                         "%s[%s:%d %s()][%s]%s %s\n",                         \
+                         LOG_COLORS[logLevel], __FILE__, __LINE__, __func__,    \
+                         LOG_LEVEL_STR[logLevel], RESET_COLOR, _log_buf);        \
+        }                                                                       \
     } while (0)
+
 
 #define LOG_ERROR(fmt, ...)  LOG(DEFAULT_LOGGER, LL_ERROR, fmt __VA_OPT__(, __VA_ARGS__))
 #define LOG_WARN(fmt, ...)   LOG(DEFAULT_LOGGER, LL_WARN,  fmt __VA_OPT__(, __VA_ARGS__))

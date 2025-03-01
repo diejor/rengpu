@@ -31,6 +31,7 @@ static void onAdapterRequestEnded(
 		const char* message,
 		void* userdata
 ) {
+    ZoneScoped;
     RDContext& context = *reinterpret_cast<RDContext*>(userdata);
 	if (status == WGPURequestAdapterStatus_Success || status == 1) {
         context.adapter = p_adapter;
@@ -48,6 +49,7 @@ void onDeviceRequestEnded(
 		const char* message,
 		void* userdata
 ) {
+    ZoneScoped;
     RDContext& context = *reinterpret_cast<RDContext*>(userdata);
 	if (status == WGPURequestDeviceStatus_Success || status == 1) {
         context.device = device;
@@ -59,6 +61,7 @@ void onDeviceRequestEnded(
 }
 
 void RDContext::Initialize(WGPUInstance p_instance, RDSurface p_rdSurface) {
+    ZoneScoped;
 	instance = p_instance;
 	rdSurface = std::move(p_rdSurface);
 
@@ -125,9 +128,11 @@ void RDContext::Initialize(WGPUInstance p_instance, RDSurface p_rdSurface) {
 }
 
 WGPUShaderModule RDContext::LoadShaderModule(const std::string& filename) {
+    ZoneScoped;
 	std::cout << std::string(RESOURCE_DIR) << std::endl;
     std::ifstream file(std::string(RESOURCE_DIR) + filename, std::ios::binary);
     if (!file) {
+        LOG_ERROR("Failed to open shader: %s", filename.c_str());
         throw std::runtime_error("Failed to open shader: " + filename);
     }
     LOG_TRACE("Shader file opened: %s", filename.c_str());
@@ -155,6 +160,7 @@ WGPUShaderModule RDContext::LoadShaderModule(const std::string& filename) {
 }
 
 RDContext::RDContext() {
+    ZoneScoped;
 	instance = nullptr;
 	adapter = nullptr;
 	device = nullptr;
@@ -163,6 +169,7 @@ RDContext::RDContext() {
 }
 
 RDContext::~RDContext() {
+    ZoneScoped;
 	if (instance) {
 		wgpuInstanceRelease(instance);
         LOG_TRACE("Instance released");
@@ -222,6 +229,7 @@ void RDContext::ConfigureSurface(const int& width, const int& height) {
 }
 
 WGPUTextureView RDContext::NextTextureView() {
+    ZoneScoped;
 	WGPUSurfaceTexture surface_texture = {};
 	wgpuSurfaceGetCurrentTexture(rdSurface.surface, &surface_texture);
 

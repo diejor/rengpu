@@ -28,6 +28,7 @@ void onWindowResize(GLFWwindow* window, int width, int height) {
 }
 
 Application::Window Application::CreateWindow(int width, int height, const char* title) {
+	ZoneScoped;
 	glfwInit();
 
 	glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
@@ -51,6 +52,7 @@ Application::Window Application::CreateWindow(int width, int height, const char*
 }
 
 bool Application::Initialize() {
+	ZoneScoped;
 	int width = 800;
 	int height = 600;
 	m_window = CreateWindow(width, height, "WebGPU");
@@ -78,6 +80,7 @@ bool Application::Initialize() {
 }
 
 bool Application::InitGui() {
+	ZoneScoped;
 	// Setup Dear ImGui context
 	IMGUI_CHECKVERSION();
 	ImGui::CreateContext();
@@ -101,8 +104,8 @@ bool Application::InitGui() {
 }
 
 void Application::MainLoop() {
-    FrameMark;
-    ZoneScoped;
+	FrameMark;
+	ZoneScoped;
 	glfwPollEvents();
 	WGPUTextureView texture_view = m_context.NextTextureView();
 	if (!texture_view) {
@@ -140,40 +143,49 @@ void Application::MainLoop() {
 	};
 
 	WGPURenderPassEncoder renderPass = wgpuCommandEncoderBeginRenderPass(encoder, &renderPassDesc);
+	{
+		ZoneScopedN("Render Pass");
 
-	wgpuRenderPassEncoderSetPipeline(renderPass, m_pipeline);
-	wgpuRenderPassEncoderSetVertexBuffer(renderPass, 0, m_vertexBuffer, 0, wgpuBufferGetSize(m_vertexBuffer));
-	wgpuRenderPassEncoderDraw(renderPass, m_vertexCount, 1, 0, 0);
+		wgpuRenderPassEncoderSetPipeline(renderPass, m_pipeline);
+		wgpuRenderPassEncoderSetVertexBuffer(renderPass, 0, m_vertexBuffer, 0, wgpuBufferGetSize(m_vertexBuffer));
+		wgpuRenderPassEncoderSetIndexBuffer(
+				renderPass, m_indexBuffer, WGPUIndexFormat_Uint16, 0, wgpuBufferGetSize(m_indexBuffer)
+		);
+		wgpuRenderPassEncoderDrawIndexed(renderPass, m_indexCount, 1, 0, 0, 0);
 
-    UpdateGui();
+		UpdateGui();
 
-    // Not sure how to check that FrameBuffer size is valid just in time when imgui has to be rendered.
-    // The FrameBuffer size might change in the middle of the frame, after glfwPollEvents() is called.
-    // In that case, onResize configured the surface with an old size, and the new size is not yet configured.
-    // So, we need to check if the FrameBuffer size is the same as the window size.
-    //
-    // This is a workaround for the issue, but there should be a way to check if the FrameBuffer size is valid
-    // without checking the window size every frame.
-    // I tried storing a skipFrame bool in the class and adding two glfwPollEvents() calls, one to configure 
-    // the surface when possible, and the other to check if the FrameBuffer size is valid. But it didn't work.
-   	int currentWidth, currentHeight;
-	glfwGetFramebufferSize(m_window.handle, &currentWidth, &currentHeight);
-	if (currentWidth == m_window.width && currentHeight == m_window.height) {
-		ImGui_ImplWGPU_RenderDrawData(ImGui::GetDrawData(), renderPass);
+		// Not sure how to check that FrameBuffer size is valid just in time when imgui has to be rendered.
+		// The FrameBuffer size might change in the middle of the frame, after glfwPollEvents() is called.
+		// In that case, onResize configured the surface with an old size, and the new size is not yet configured.
+		// So, we need to check if the FrameBuffer size is the same as the window size.
+		//
+		// This is a workaround for the issue, but there should be a way to check if the FrameBuffer size is valid
+		// without checking the window size every frame.
+		// I tried storing a skipFrame bool in the class and adding two glfwPollEvents() calls, one to configure
+		// the surface when possible, and the other to check if the FrameBuffer size is valid. But it didn't work.
+		{
+			ZoneScopedN("FrameBuffer size check");
+			int currentWidth, currentHeight;
+			glfwGetFramebufferSize(m_window.handle, &currentWidth, &currentHeight);
+			if (currentWidth == m_window.width && currentHeight == m_window.height) {
+				ImGui_ImplWGPU_RenderDrawData(ImGui::GetDrawData(), renderPass);
+			}
+		}
+
+		wgpuRenderPassEncoderEnd(renderPass);
+		wgpuRenderPassEncoderRelease(renderPass);
+
+		WGPUCommandBufferDescriptor commandBufferDesc = {
+			.nextInChain = nullptr,
+			.label = "My Command Buffer",
+		};
+		WGPUCommandBuffer commandBuffer = wgpuCommandEncoderFinish(encoder, &commandBufferDesc);
+		wgpuCommandEncoderRelease(encoder);
+
+		wgpuQueueSubmit(m_context.queue, 1, &commandBuffer);
+		wgpuCommandBufferRelease(commandBuffer);
 	}
-
-	wgpuRenderPassEncoderEnd(renderPass);
-	wgpuRenderPassEncoderRelease(renderPass);
-
-	WGPUCommandBufferDescriptor commandBufferDesc = {
-		.nextInChain = nullptr,
-		.label = "My Command Buffer",
-	};
-	WGPUCommandBuffer commandBuffer = wgpuCommandEncoderFinish(encoder, &commandBufferDesc);
-	wgpuCommandEncoderRelease(encoder);
-
-	wgpuQueueSubmit(m_context.queue, 1, &commandBuffer);
-	wgpuCommandBufferRelease(commandBuffer);
 
 	wgpuTextureViewRelease(texture_view);
 #ifndef __EMSCRIPTEN__
@@ -184,7 +196,7 @@ void Application::MainLoop() {
 }
 
 void Application::onResize(const int& width, const int& height) {
-    ZoneScoped;
+	ZoneScoped;
 	LOG_TRACE("Window resized to %d x %d", width, height);
 
 	m_context.ConfigureSurface(width, height);
@@ -193,6 +205,7 @@ void Application::onResize(const int& width, const int& height) {
 }
 
 void Application::InitPipeline() {
+	ZoneScoped;
 	WGPUShaderModule module = m_context.LoadShaderModule("triangles.wgsl");
 
 	WGPUBlendState blendState = {
@@ -281,7 +294,7 @@ void Application::InitPipeline() {
 }
 
 void Application::UpdateGui() {
-    ZoneScoped;
+	ZoneScoped;
 	ImGui_ImplWGPU_NewFrame();
 	ImGui_ImplGlfw_NewFrame();
 	ImGui::NewFrame();
@@ -307,33 +320,62 @@ void Application::UpdateGui() {
 }
 
 void Application::InitBuffers() {
+	ZoneScoped;
 	// Define your vertex data
 	m_vertexData = {
-		{ { -0.5f, -0.5f }, { 1.0f, 0.0f, 0.0f } },	 { { +0.8f, -0.5f }, { 0.0f, 1.0f, 0.0f } },
-		{ { +0.0f, +0.5f }, { 0.0f, 0.0f, 1.0f } },	 { { -0.55f, -0.5f }, { 1.0f, 1.0f, 0.0f } },
-		{ { -0.05f, +0.5f }, { 1.0f, 0.0f, 1.0f } }, { { -0.55f, +0.5f }, { 0.0f, 1.0f, 1.0f } },
+		{ { -0.5f, -0.5f }, { 1.0f, 0.0f, 0.0f } },
+		{ { +0.5f, -0.5f }, { 0.0f, 0.0f, 1.0f } },
+		{ { +0.5f, +0.5f }, { 1.0f, 0.0f, 1.0f } },
+		{ { -0.5f, +0.5f }, { 0.0f, 1.0f, 0.0f } },
 	};
 
-	m_vertexCount = static_cast<uint32_t>(m_vertexData.size());
+	m_indexData = {
+		0, 1, 2, 0, 2, 3,
+	};
 
-	// Create the GPU vertex buffer.
-	WGPUBufferDescriptor bufferDesc = {
+	m_indexCount = static_cast<uint32_t>(m_indexData.size());
+
+	WGPUBufferDescriptor vertexBufferDesc = {
 		.nextInChain = nullptr,
 		.label = "My Vertex Buffer",
 		.usage = WGPUBufferUsage_Vertex | WGPUBufferUsage_CopyDst,
-		.size = m_vertexCount * sizeof(Vertex),
+		.size = m_vertexData.size() * sizeof(Vertex),
 		.mappedAtCreation = false,
 	};
+	vertexBufferDesc.size = (vertexBufferDesc.size + 3) & ~3;
 
-	m_vertexBuffer = wgpuDeviceCreateBuffer(m_context.device, &bufferDesc);
+	WGPUBufferDescriptor indexBufferDesc = {
+		.nextInChain = nullptr,
+		.label = "My Index Buffer",
+		.usage = WGPUBufferUsage_Index | WGPUBufferUsage_CopyDst,
+		.size = m_indexData.size() * sizeof(uint16_t),
+		.mappedAtCreation = false,
+	};
+	indexBufferDesc.size = (indexBufferDesc.size + 3) & ~3;
 
-	// Write the vertex data to the buffer.
-	wgpuQueueWriteBuffer(m_context.queue, m_vertexBuffer, 0, m_vertexData.data(), bufferDesc.size);
+    WGPUBufferDescriptor uniformBufferDesc = {
+        .nextInChain = nullptr,
+        .label = "My Uniform Buffer",
+        .usage = WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst,
+        .size = 4 * sizeof(float),
+        .mappedAtCreation = false,
+    };
+
+	m_vertexBuffer = wgpuDeviceCreateBuffer(m_context.device, &vertexBufferDesc);
+	m_indexBuffer = wgpuDeviceCreateBuffer(m_context.device, &indexBufferDesc);
+    m_uniformBuffer = wgpuDeviceCreateBuffer(m_context.device, &uniformBufferDesc);
+
+	wgpuQueueWriteBuffer(m_context.queue, m_vertexBuffer, 0, m_vertexData.data(), vertexBufferDesc.size);
+	wgpuQueueWriteBuffer(m_context.queue, m_indexBuffer, 0, m_indexData.data(), indexBufferDesc.size);
+
+    float currentTime = 1.0f;
+    wgpuQueueWriteBuffer(m_context.queue, m_uniformBuffer, 0, &currentTime, sizeof(float));
 
 	LOG_INFO("Buffers initialized");
 }
 
 Application::Application() {
+	ZoneScoped;
 	LOG_INFO("Application created");
 }
 
@@ -342,6 +384,7 @@ bool Application::isRunning() {
 }
 
 void Application::Terminate() {
+	ZoneScoped;
 	if (m_window.handle != nullptr) {
 		glfwDestroyWindow(m_window.handle);
 		LOG_TRACE("Application window destroyed");
@@ -354,11 +397,20 @@ void Application::Terminate() {
 		wgpuBufferRelease(m_vertexBuffer);
 		LOG_TRACE("Buffers destroyed");
 	}
+	if (m_indexBuffer != nullptr) {
+		wgpuBufferRelease(m_indexBuffer);
+		LOG_TRACE("Index buffer destroyed");
+	}
+    if (m_uniformBuffer != nullptr) {
+        wgpuBufferRelease(m_uniformBuffer);
+        LOG_TRACE("Uniform buffer destroyed");
+    }
 	TerminateGui();
 	glfwTerminate();
 }
 
 void Application::TerminateGui() {
+	ZoneScoped;
 	ImGui_ImplWGPU_Shutdown();
 	ImGui_ImplGlfw_Shutdown();
 	ImGui::DestroyContext();
@@ -366,5 +418,6 @@ void Application::TerminateGui() {
 }
 
 Application::~Application() {
+	ZoneScoped;
 	LOG_INFO("Application destroyed");
 }
