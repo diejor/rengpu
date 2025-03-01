@@ -3,179 +3,129 @@ This requires invoke to be installed on the machine (not venv), which can be
 done via:
     pipx install invoke
 """
-from datetime import datetime
-from hashlib import md5
+
 from pathlib import Path
 from shutil import rmtree as shutil_rmtree
-from typing import Optional
-
 from invoke import task
 
 PROJECT: str = "rengpu"
 SRC_PATH: Path = Path(__file__).parent
-WORKSPACE: Path = SRC_PATH / ".cache"
-MD5: Optional[str] = None
-BUILD_PATH: Optional[Path] = None
-INSTALL_PATH: Optional[Path] = None
 
-def get_md5(content: str) -> str:
-    global MD5
-    if MD5 is None:
-        MD5 = md5(str.encode(content)).hexdigest()
-    return MD5
+# Define workspace directories.
+WORKSPACE: Path = SRC_PATH / ".cache"
 
 def get_cmake_workspace() -> Path:
     return WORKSPACE / f"{PROJECT}"
 
-def get_build_path() -> Path:
-    global BUILD_PATH
-    if BUILD_PATH is None:
-        BUILD_PATH = get_cmake_workspace() / "build"
-    return BUILD_PATH
+def get_build_path(preset: str = "default") -> Path:
+    """
+    Returns the build directory based on the preset.
+    Default preset uses "build" and the emscripten preset uses "build-web".
+    """
+    if preset == "emscripten":
+        return get_cmake_workspace() / "build-web"
+    else:
+        return get_cmake_workspace() / "build"
 
 def get_install_path() -> Path:
-    global INSTALL_PATH
-    if INSTALL_PATH is None:
-        INSTALL_PATH = get_cmake_workspace() / "install"
-    return INSTALL_PATH
-
-def get_web_build_path() -> Path:
-    return get_cmake_workspace() / "build-web"
+    """
+    Returns the install directory.
+    This should match the CMAKE_INSTALL_PREFIX set in your CMakePresets.json.
+    """
+    return get_cmake_workspace() / "install"
 
 @task
-def info(c, topic="all"):
-    """Show project info."""
-    if topic == "all":
-        print(f"Project         = {PROJECT}")
-        print(f"Source path     = {SRC_PATH}")
-        print(f"Build path      = {get_build_path()}")
-        print(f"Web Build path  = {get_web_build_path()}")
-        print(f"Install path    = {get_install_path()}")
-    elif topic == "build_path":
-        print(get_build_path())
-    elif topic == "install_path":
-        print(get_install_path())
-    else:
-        print("Error: Valid 'topic' names are 'build_path'/'install_path'")
+def info(c, preset="default"):
+    """Show project info using the specified CMake preset."""
+    print(f"Project         = {PROJECT}")
+    print(f"Source path     = {SRC_PATH}")
+    print(f"Using CMake preset: {preset}")
+    print("Ensure your CMakePresets.json is properly configured.")
 
 @task
-def config(c):
-    """Run CMake configure for native build."""
-    build_path = get_build_path()
+def config(c, preset="default"):
+    """Configure the project using CMakePresets and link compile_commands.json."""
+    build_path = get_build_path(preset)
     build_path.mkdir(parents=True, exist_ok=True)
-    cmd = [
-        "cmake",
-        "-S", str(SRC_PATH),
-        "-B", str(build_path),
-        "-GNinja",
-        "-DCMAKE_BUILD_TYPE=RelWithDebInfo",
-        "-DCMAKE_EXPORT_COMPILE_COMMANDS=1",
-        "-DGLFW_BUILD_WAYLAND=OFF",
-    ]
-    c.run(" ".join(cmd), pty=True)
+    cmd = f"cmake --preset {preset}"
+    print(f"Running: {cmd}")
+    c.run(cmd, pty=True)
 
-    # Symlink compile_commands.json
+    # Symlink compile_commands.json if it exists in the build directory
     src_ccdb_file = SRC_PATH / "compile_commands.json"
     build_ccdb_file = build_path / "compile_commands.json"
     if build_ccdb_file.exists() and not src_ccdb_file.exists():
+        print(f"Linking {build_ccdb_file} to {src_ccdb_file}")
         src_ccdb_file.symlink_to(build_ccdb_file)
 
 @task
-def build(c, config=False):
-    """Run build for native application via cmake."""
-    build_path = get_build_path()
-
-    if not build_path.exists():
-        if config:
-            do_config(c)
-        else:
-            print("Error: build path doesn't exist.")
-            return
-
-    cmd = ["cmake", "--build", str(build_path)]
-    c.run(" ".join(cmd), pty=True)
+def build(c, preset="default"):
+    """Build the project using CMakePresets."""
+    cmd = f"cmake --build --preset {preset}"
+    print(f"Running: {cmd}")
+    c.run(cmd, pty=True)
 
 @task
-def install(c):
-    """Run install via cmake."""
-    build_path = get_build_path()
-    install_path = get_install_path()
-
-    if not build_path.exists():
-        print("Error: build path doesn't exist.")
-        return
-
-    cmd = ["cmake", "--install", str(build_path)]
-    c.run(" ".join(cmd), env={"DESTDIR": str(install_path)}, pty=True)
-
-@task
-def run(c):
-    """Run the installed native binary.
-    If the native build is not configured, it will run config automatically.
+def install(c, preset="default"):
     """
-    build_path = get_build_path()
-    if not build_path.exists():
-        print("Native build path doesn't exist. Running 'invoke config'...")
-        config(c)
+    Install the project using the build directory from CMakePresets.
+    
+    Since the CMAKE_INSTALL_PREFIX is already set in the preset,
+    we do not use DESTDIR.
+    """
+    build_path = get_build_path(preset)
+    cmd = f"cmake --install {build_path}"
+    print(f"Running: {cmd}")
+    c.run(cmd, pty=True)
 
-    build(c)
+@task
+def run(c, preset="default"):
+    """
+    Run the installed native binary.
+    
+    This task will configure, build, and install using the specified preset.
+    The installed binary is expected to be at:
+        <install_path>/bin/app
+    """
+    config(c, preset=preset)
+    build(c, preset=preset)
+    install(c, preset=preset)
 
-    install(c)
-
-    binary_path = get_install_path() / "usr/local/bin/app"
+    install_dir = get_install_path()
+    binary_path = install_dir / "bin/app"
     if not binary_path.exists():
         print("Error: installed binary not found. Check your build configuration.")
         return
 
-    print(f"{PROJECT}: running on {binary_path}")
-    print(" ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ \n")
+    print(f"{PROJECT}: running binary at {binary_path}")
     c.run(str(binary_path), pty=True)
 
 @task
 def clean(c):
-    """Clean native build directory."""
-    ccdb_file = SRC_PATH.joinpath("compile_commands.json")
+    """Clean build and install directories."""
+    ccdb_file = SRC_PATH / "compile_commands.json"
     if ccdb_file.exists():
         ccdb_file.unlink()
         print(f"Removed {ccdb_file}")
     else:
         print("compile_commands.json absent. Nothing to do.")
 
-    build_path = get_build_path()
-    if build_path.exists():
-        shutil_rmtree(build_path)
-        print(f"Cleaned {build_path}")
-    else:
-        print("Build path absent. Nothing to do.")
-
-@task(pre=[clean])
-def clean_all(c):
-    """Clean native build and install directories."""
-    install_path = get_install_path()
-    if install_path.exists():
-        shutil_rmtree(install_path)
-        print(f"Cleaned {install_path}")
-    else:
-        print("Install path absent. Nothing to do.")
-
-@task
-def ls(c):
-    """List files using lsd and skip .cache folder."""
-    cmd = [
-        "lsd",
-        "--tree",
-        "--ignore-glob", ".cache",
-    ]
-    c.run(" ".join(cmd), pty=True)
+    for subdir in ["build", "build-web", "install"]:
+        path = get_cmake_workspace() / subdir
+        if path.exists():
+            shutil_rmtree(path)
+            print(f"Cleaned {path}")
+        else:
+            print(f"{path} absent. Nothing to do.")
 
 #
-# Emscripten/Web Build Tasks
+# Emscripten/Web Build Tasks using a separate preset (e.g., "emscripten")
 #
 
 @task
 def clean_web(c):
     """Clean web build directory."""
-    web_build_path = get_web_build_path()
+    web_build_path = get_build_path("emscripten")
     if web_build_path.exists():
         shutil_rmtree(web_build_path)
         print(f"Cleaned web build directory: {web_build_path}")
@@ -183,56 +133,45 @@ def clean_web(c):
         print("Web build path absent. Nothing to do.")
 
 @task
-def config_web(c):
-    """Configure CMake for Emscripten (WebAssembly) build."""
-    web_build_path = get_web_build_path()
-    web_build_path.mkdir(parents=True, exist_ok=True)
-    cmd = [
-        "emcmake", "cmake",
-        "-S", str(SRC_PATH),
-        "-B", str(web_build_path),
-        "-GNinja",
-        "-DCMAKE_BUILD_TYPE=RelWithDebInfo",
-        "-DCMAKE_EXPORT_COMPILE_COMMANDS=1",
-        "-DGLFW_BUILD_WAYLAND=OFF",
-    ]
-    c.run(" ".join(cmd), pty=True)
+def config_web(c, preset="emscripten"):
+    """Configure CMake for Emscripten (WebAssembly) build using CMakePresets."""
+    # Here we assume you use emcmake to set up the environment for Emscripten.
+    cmd = f"emcmake cmake --preset {preset}"
+    print(f"Running: {cmd}")
+    c.run(cmd, pty=True)
+    
+    # Link compile_commands.json for the web build as well.
+    web_build_path = get_build_path(preset)
+    src_ccdb_file = SRC_PATH / "compile_commands.json"
+    build_ccdb_file = web_build_path / "compile_commands.json"
+    if build_ccdb_file.exists() and not src_ccdb_file.exists():
+        print(f"Linking {build_ccdb_file} to {src_ccdb_file}")
+        src_ccdb_file.symlink_to(build_ccdb_file)
 
 @task
-def build_web(c, config=False):
-    """Build the project for the Web (WASM) via CMake."""
-    web_build_path = get_web_build_path()
-    if not web_build_path.exists():
-        if config:
-            config_web(c)
-        else:
-            print("Error: web build path doesn't exist. Run 'invoke config_web' first.")
-            return
-    cmd = ["cmake", "--build", str(web_build_path)]
-    c.run(" ".join(cmd), pty=True)
+def build_web(c, preset="emscripten"):
+    """Build the project for the Web (WASM) via CMakePresets."""
+    cmd = f"cmake --build --preset {preset}"
+    print(f"Running: {cmd}")
+    c.run(cmd, pty=True)
 
 @task
-def run_web(c):
-    """Run the web build locally using Python's HTTP server.
-    If the web build is not configured, it will run config_web automatically.
+def run_web(c, preset="emscripten"):
     """
-    web_build_path = get_web_build_path()
-    if not web_build_path.exists():
-        print("Web build path doesn't exist. Running 'invoke config_web'...")
-        config_web(c)
+    Run the web build locally using Python's HTTP server.
+    
+    This task will configure and build the web target using the specified preset.
+    """
+    config_web(c, preset=preset)
+    build_web(c, preset=preset)
 
-    # Build the web build
-    build_web(c)
-
+    web_build_path = get_build_path(preset)
     html_file = web_build_path / "index.html"
     if not html_file.exists():
-        print("app.html not found in the web build. Reconfiguring...")
-        config_web(c)
-        build_web(c)
-        if not html_file.exists():
-            print("Error: app.html still not found. Please check your web build configuration.")
-            return
+        print("index.html not found in the web build. Please check your web build configuration.")
+        return
 
-    print(f"Starting local server in: {web_build_path}")
+    print(f"Starting local server in: {html_file.parent}")
     print("Open your browser at http://localhost:8000/")
-    c.run(f"python -m http.server -d {web_build_path}", pty=True)
+    c.run(f"python -m http.server -d {html_file.parent}", pty=True)
+

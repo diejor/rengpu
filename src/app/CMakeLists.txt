@@ -1,8 +1,8 @@
 add_executable(app 
-    main.cpp 
-    application.cpp 
-    webgpu-utils.cpp
+    Main.cpp 
+    Application.cpp 
 )
+
 
 set_target_properties(app PROPERTIES
     CXX_STANDARD 20
@@ -11,12 +11,30 @@ set_target_properties(app PROPERTIES
     COMPILE_WARNINGS_AS_ERRORS ON
 )
 
+target_include_directories(app PUBLIC
+    Application.hpp
+)
+
+# include directories here
+target_link_libraries(app PRIVATE
+    webgpu
+    glfw
+    glfw3webgpu
+    renderer
+    utils
+    imgui
+    Tracy::TracyClient
+)
+
+
+
 if(UNIX AND NOT APPLE)
     set_target_properties(app PROPERTIES INSTALL_RPATH "$ORIGIN")
 endif()
 
 if (MSVC)
     target_compile_options(app PRIVATE /W4)
+
 else ()
     target_compile_options(app PRIVATE -Wall -Wextra -pedantic)
 endif ()
@@ -28,16 +46,6 @@ if (XCODE)
     )
 endif()
 
-
-# include directories here
-target_link_libraries(app PRIVATE
-    utils
-    webgpu
-    glfw
-    glfw3webgpu
-)
-
-
 if (EMSCRIPTEN)
     set(SHELL_FILE shell_minimal.html)
 
@@ -46,14 +54,14 @@ if (EMSCRIPTEN)
         -sUSE_WEBGPU
         -sASYNCIFY
         --preload-file "${CMAKE_SOURCE_DIR}/resources@/resources"
-        --shell-file "${CMAKE_CURRENT_SOURCE_DIR}/${SHELL_FILE}"
+        --shell-file "${CMAKE_SOURCE_DIR}/resources/${SHELL_FILE}"
         -sALLOW_MEMORY_GROWTH
     )
 
     set_property(
         TARGET app
         PROPERTY LINK_DEPENDS
-        "${CMAKE_CURRENT_SOURCE_DIR}/${SHELL_FILE}"
+        "${CMAKE_SOURCE_DIR}/resources/${SHELL_FILE}"
     )
 
     set_target_properties(app PROPERTIES 
@@ -63,7 +71,6 @@ if (EMSCRIPTEN)
     )
 
 endif()
-
 
 # The application's binary must find wgpu.dll or libwgpu.so at runtime,
 # so we automatically copy it (it's called WGPU_RUNTIME_LIB in general)

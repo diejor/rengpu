@@ -1,10 +1,19 @@
 .cache/
+build/
+build-web/
 vcpkg_installed/
 compile_commands.json
+*.ini
+.vscode
 
 # Visual Studio
 out
 .vs
+
+# CLion
+.idea
+cmake-build-*
+
 
 # CMake
 .workspace/
