@@ -60,16 +60,21 @@ bool Application::Initialize() {
 	WGPUInstance instance = wgpuCreateInstance(nullptr);
 	LOG_TRACE("WebGPU instance created");
 
-	RDSurface rdSurface(
+	RdSurface rdSurface(
 			glfwCreateWindowWGPUSurface(instance, m_window.handle),
 			WGPUTextureFormat_Undefined	 // format is deferred until surface is configured
 	);
 
-	m_context.Initialize(instance, std::move(rdSurface));
-	m_context.ConfigureSurface(width, height);
+    m_driver = {
+        .device = nullptr,
+        .queue = nullptr,
+    };
 
-	InitPipeline();
+	m_context.Initialize(instance, std::move(rdSurface), &m_driver);
+	m_context.ConfigureSurface(width, height, m_driver.device);
+
 	InitBuffers();
+	InitPipeline();
 
 	if (!InitGui()) {
 		return false;
@@ -92,7 +97,7 @@ bool Application::InitGui() {
 	ImGui_ImplGlfw_InstallEmscriptenCallbacks(m_window.handle, "#canvas");
 #endif
 	ImGui_ImplWGPU_InitInfo init_info = {};
-	init_info.Device = m_context.device;
+	init_info.Device = m_driver.device;
 	init_info.NumFramesInFlight = 3;
 	init_info.RenderTargetFormat = m_context.rdSurface.format;
 	LOG_WARN("IMGUI: DepthStencilFormat is undefined");
@@ -107,6 +112,17 @@ void Application::MainLoop() {
 	FrameMark;
 	ZoneScoped;
 	glfwPollEvents();
+	UpdateGui();
+
+	{
+		ZoneScopedN("Update Buffers");
+		wgpuQueueWriteBuffer(
+				m_driver.queue, m_vertexBuffer, 0, m_vertexData.data(), m_vertexData.size() * sizeof(Vertex)
+		);
+		float currentTime = static_cast<float>(glfwGetTime());
+		wgpuQueueWriteBuffer(m_driver.queue, m_uniformBuffer, 0, &currentTime, sizeof(float));
+	}
+
 	WGPUTextureView texture_view = m_context.NextTextureView();
 	if (!texture_view) {
 		return;
@@ -116,7 +132,7 @@ void Application::MainLoop() {
 		.nextInChain = nullptr,
 		.label = "My Encoder",
 	};
-	WGPUCommandEncoder encoder = wgpuDeviceCreateCommandEncoder(m_context.device, &encoderDesc);
+	WGPUCommandEncoder encoder = wgpuDeviceCreateCommandEncoder(m_driver.device, &encoderDesc);
 
 	WGPURenderPassColorAttachment colorAttachment = {
 		.nextInChain = nullptr,
@@ -151,9 +167,8 @@ void Application::MainLoop() {
 		wgpuRenderPassEncoderSetIndexBuffer(
 				renderPass, m_indexBuffer, WGPUIndexFormat_Uint16, 0, wgpuBufferGetSize(m_indexBuffer)
 		);
+		wgpuRenderPassEncoderSetBindGroup(renderPass, 0, m_bindGroup, 0, nullptr);
 		wgpuRenderPassEncoderDrawIndexed(renderPass, m_indexCount, 1, 0, 0, 0);
-
-		UpdateGui();
 
 		// Not sure how to check that FrameBuffer size is valid just in time when imgui has to be rendered.
 		// The FrameBuffer size might change in the middle of the frame, after glfwPollEvents() is called.
@@ -183,7 +198,7 @@ void Application::MainLoop() {
 		WGPUCommandBuffer commandBuffer = wgpuCommandEncoderFinish(encoder, &commandBufferDesc);
 		wgpuCommandEncoderRelease(encoder);
 
-		wgpuQueueSubmit(m_context.queue, 1, &commandBuffer);
+		wgpuQueueSubmit(m_driver.queue, 1, &commandBuffer);
 		wgpuCommandBufferRelease(commandBuffer);
 	}
 
@@ -192,105 +207,35 @@ void Application::MainLoop() {
 	wgpuSurfacePresent(m_context.rdSurface.surface);
 #endif
 
-	m_context.Polltick();
+	m_context.Polltick(m_driver.device);
 }
 
 void Application::onResize(const int& width, const int& height) {
 	ZoneScoped;
 	LOG_TRACE("Window resized to %d x %d", width, height);
 
-	m_context.ConfigureSurface(width, height);
+	m_context.ConfigureSurface(width, height, m_driver.device);
 	m_window.width = width;
 	m_window.height = height;
 }
 
 void Application::InitPipeline() {
 	ZoneScoped;
-	WGPUShaderModule module = m_context.LoadShaderModule("triangles.wgsl");
 
-	WGPUBlendState blendState = {
-        .color = {
-            .operation = WGPUBlendOperation_Add,
-            .srcFactor = WGPUBlendFactor_SrcAlpha,
-            .dstFactor = WGPUBlendFactor_OneMinusSrcAlpha,
-        },
-        .alpha = {
-            .operation = WGPUBlendOperation_Add,
-            .srcFactor = WGPUBlendFactor_Zero,
-            .dstFactor = WGPUBlendFactor_One,
-        },
-    };
+    m_bindGroupLayout = m_driver.BindGroupLayoutCreate();
+    m_bindGroup = m_driver.BindGroupCreate(m_bindGroupLayout, m_uniformBuffer);
 
-	WGPUColorTargetState colorTargetState = {
+	WGPUPipelineLayoutDescriptor pipelineLayoutDesc = {
 		.nextInChain = nullptr,
-		.format = m_context.rdSurface.format,
-		.blend = &blendState,
-		.writeMask = WGPUColorWriteMask_All,
+		.label = "My Pipeline Layout",
+		.bindGroupLayoutCount = 1,
+		.bindGroupLayouts = &m_bindGroupLayout,
 	};
+    m_pipelineLayout = wgpuDeviceCreatePipelineLayout(m_driver.device, &pipelineLayoutDesc);
 
-	WGPUVertexAttribute posAttribute = {
-		.format = WGPUVertexFormat_Float32x2,
-		.offset = 0,
-		.shaderLocation = 0,
-	};
+    m_pipeline = m_driver.PipelineCreate(m_context.rdSurface, m_pipelineLayout);
 
-	WGPUVertexAttribute colorAttribute = {
-		.format = WGPUVertexFormat_Float32x3,
-		.offset = 2 * sizeof(float),
-		.shaderLocation = 1,
-	};
-
-	std::vector<WGPUVertexAttribute> attributes = { posAttribute, colorAttribute };
-
-	WGPUVertexBufferLayout vertexBufferLayout = {
-		.arrayStride = 5 * sizeof(float),
-		.stepMode = WGPUVertexStepMode_Vertex,
-		.attributeCount = 2,
-		.attributes = attributes.data(),
-	};
-
-	WGPUFragmentState fragmentState = {
-		.nextInChain = nullptr,
-		.module = module,
-		.entryPoint = "fs_main",
-		.constantCount = 0,
-		.constants = nullptr,
-		.targetCount = 1,
-		.targets = &colorTargetState,
-	};
-
-	WGPURenderPipelineDescriptor pipelineDesc = {
-        .nextInChain = nullptr,
-        .label = "My Pipeline",
-        .layout = nullptr,
-        .vertex = {
-            .nextInChain = nullptr,
-            .module = module,
-            .entryPoint = "vs_main",
-            .constantCount = 0,
-            .constants = nullptr,
-            .bufferCount = 1,
-            .buffers = &vertexBufferLayout,
-        },
-        .primitive = {
-            .nextInChain = nullptr,
-            .topology = WGPUPrimitiveTopology_TriangleList,
-            .stripIndexFormat = WGPUIndexFormat_Undefined,
-            .frontFace = WGPUFrontFace_CCW,
-            .cullMode = WGPUCullMode_None,
-        },
-        .depthStencil = nullptr,
-        .multisample = {
-            .nextInChain = nullptr,
-            .count = 1,
-            .mask = ~0u,
-            .alphaToCoverageEnabled = false,
-        },
-        .fragment = &fragmentState,  
-    };
-
-	m_pipeline = wgpuDeviceCreateRenderPipeline(m_context.device, &pipelineDesc);
-	LOG_INFO("Pipeline initialized");
+    LOG_INFO("Pipeline initialized");
 }
 
 void Application::UpdateGui() {
@@ -315,8 +260,6 @@ void Application::UpdateGui() {
 	// Render ImGui
 	ImGui::EndFrame();
 	ImGui::Render();
-
-	wgpuQueueWriteBuffer(m_context.queue, m_vertexBuffer, 0, m_vertexData.data(), m_vertexData.size() * sizeof(Vertex));
 }
 
 void Application::InitBuffers() {
@@ -353,23 +296,23 @@ void Application::InitBuffers() {
 	};
 	indexBufferDesc.size = (indexBufferDesc.size + 3) & ~3;
 
-    WGPUBufferDescriptor uniformBufferDesc = {
-        .nextInChain = nullptr,
-        .label = "My Uniform Buffer",
-        .usage = WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst,
-        .size = 4 * sizeof(float),
-        .mappedAtCreation = false,
-    };
+	WGPUBufferDescriptor uniformBufferDesc = {
+		.nextInChain = nullptr,
+		.label = "My Uniform Buffer",
+		.usage = WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst,
+		.size = 4 * sizeof(float),
+		.mappedAtCreation = false,
+	};
 
-	m_vertexBuffer = wgpuDeviceCreateBuffer(m_context.device, &vertexBufferDesc);
-	m_indexBuffer = wgpuDeviceCreateBuffer(m_context.device, &indexBufferDesc);
-    m_uniformBuffer = wgpuDeviceCreateBuffer(m_context.device, &uniformBufferDesc);
+	m_vertexBuffer = wgpuDeviceCreateBuffer(m_driver.device, &vertexBufferDesc);
+	m_indexBuffer = wgpuDeviceCreateBuffer(m_driver.device, &indexBufferDesc);
+	m_uniformBuffer = wgpuDeviceCreateBuffer(m_driver.device, &uniformBufferDesc);
 
-	wgpuQueueWriteBuffer(m_context.queue, m_vertexBuffer, 0, m_vertexData.data(), vertexBufferDesc.size);
-	wgpuQueueWriteBuffer(m_context.queue, m_indexBuffer, 0, m_indexData.data(), indexBufferDesc.size);
+	wgpuQueueWriteBuffer(m_driver.queue, m_vertexBuffer, 0, m_vertexData.data(), vertexBufferDesc.size);
+	wgpuQueueWriteBuffer(m_driver.queue, m_indexBuffer, 0, m_indexData.data(), indexBufferDesc.size);
 
-    float currentTime = 1.0f;
-    wgpuQueueWriteBuffer(m_context.queue, m_uniformBuffer, 0, &currentTime, sizeof(float));
+	float currentTime = 1.0f;
+	wgpuQueueWriteBuffer(m_driver.queue, m_uniformBuffer, 0, &currentTime, sizeof(float));
 
 	LOG_INFO("Buffers initialized");
 }
@@ -401,10 +344,22 @@ void Application::Terminate() {
 		wgpuBufferRelease(m_indexBuffer);
 		LOG_TRACE("Index buffer destroyed");
 	}
-    if (m_uniformBuffer != nullptr) {
-        wgpuBufferRelease(m_uniformBuffer);
-        LOG_TRACE("Uniform buffer destroyed");
-    }
+	if (m_uniformBuffer != nullptr) {
+		wgpuBufferRelease(m_uniformBuffer);
+		LOG_TRACE("Uniform buffer destroyed");
+	}
+	if (m_pipelineLayout != nullptr) {
+		wgpuPipelineLayoutRelease(m_pipelineLayout);
+		LOG_TRACE("Pipeline layout destroyed");
+	}
+	if (m_bindGroupLayout != nullptr) {
+		wgpuBindGroupLayoutRelease(m_bindGroupLayout);
+		LOG_TRACE("Bind group layout destroyed");
+	}
+	if (m_bindGroup != nullptr) {
+		wgpuBindGroupRelease(m_bindGroup);
+		LOG_TRACE("Bind group destroyed");
+	}
 	TerminateGui();
 	glfwTerminate();
 }

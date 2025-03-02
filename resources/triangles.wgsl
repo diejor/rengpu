@@ -1,5 +1,5 @@
 
-// @group(0) @binding(0) var<uniform> uTime: f32;
+@group(0) @binding(0) var<uniform> uTime: f32;
 
 struct VertexInput {
     @location(0) position: vec2f,
@@ -16,10 +16,10 @@ fn vs_main(in: VertexInput) -> VertexOutput {
     var out: VertexOutput;
     let ratio = 800.0 / 600.0; // The width and height of the target surface
 
-    //var offset = 0.3 * vec2f(cos(uTime), sin(uTime));
+    var offset = 0.3 * vec2f(cos(uTime), sin(uTime));
 
 
-    out.position = vec4f(in.position.x, in.position.y*ratio, 0.0, 1.0);
+    out.position = vec4f(in.position.x + offset.x, in.position.y*ratio + offset.y, 0.0, 1.0);
     out.color = in.color;
     return out;
 }

@@ -1,9 +1,9 @@
 add_library(renderer STATIC
-    RendererContext.hpp
-    RendererContext.cpp
-    RendererSurface.hpp  
-    RendererDriver.hpp
-    RendererDriver.cpp
+    Context.hpp
+    Context.cpp
+    Surface.hpp  
+    Driver.hpp
+    Driver.cpp
 )
 
 if (NOT EMSCRIPTEN)

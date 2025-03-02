@@ -1,4 +1,4 @@
-#include "RendererContext.hpp"
+#include "Context.hpp"
 
 #include "logging_macros.h"
 
@@ -11,12 +11,6 @@
 
 #include <utility>
 
-// for file reading in loadShaderModule, maybe move to ResourceManager later
-#include <fstream>
-#include <sstream>
-#include <stdexcept>
-#include <string>
-#include <iostream>
 
 #ifdef __EMSCRIPTEN__
 #include <emscripten.h>
@@ -32,7 +26,7 @@ static void onAdapterRequestEnded(
 		void* userdata
 ) {
     ZoneScoped;
-    RDContext& context = *reinterpret_cast<RDContext*>(userdata);
+    RdContext& context = *reinterpret_cast<RdContext*>(userdata);
 	if (status == WGPURequestAdapterStatus_Success || status == 1) {
         context.adapter = p_adapter;
 		LOG_TRACE("  ~  got WebGPU adapter! %p", p_adapter);
@@ -40,7 +34,6 @@ static void onAdapterRequestEnded(
 	} else {
 		ERR(true, "WebGPU could not get adapter: %s", message);
 	}
-    context.yieldToBrowser = false;
 }
 
 void onDeviceRequestEnded(
@@ -50,17 +43,17 @@ void onDeviceRequestEnded(
 		void* userdata
 ) {
     ZoneScoped;
-    RDContext& context = *reinterpret_cast<RDContext*>(userdata);
+    RdDriver& driver = *reinterpret_cast<RdDriver*>(userdata);
 	if (status == WGPURequestDeviceStatus_Success || status == 1) {
-        context.device = device;
+        driver.device = device;
 		LOG_TRACE("  ~  got WebGPU device!");
 	} else {
 		ERR(true, "WebGPU could not get device: %s", message);
 	}
-    context.yieldToBrowser = false;
 }
 
-void RDContext::Initialize(WGPUInstance p_instance, RDSurface p_rdSurface) {
+// @brief Initialize the renderer context, driver is passed by pointer to initialize
+void RdContext::Initialize(WGPUInstance p_instance, RdSurface p_rdSurface, RdDriver* p_driver) {
     ZoneScoped;
 	instance = p_instance;
 	rdSurface = std::move(p_rdSurface);
@@ -77,10 +70,9 @@ void RDContext::Initialize(WGPUInstance p_instance, RDSurface p_rdSurface) {
 	adapter = nullptr;
 	LOG_TRACE("WEBGPU adapter requested");
 	wgpuInstanceRequestAdapter(instance, &options, onAdapterRequestEnded, this);
-    yieldToBrowser = true;
 
 #ifdef __EMSCRIPTEN__
-	while (yieldToBrowser) {
+	while (adapter == nullptr) {
 		emscripten_sleep(100);
 	}
 #endif	// __EMSCRIPTEN__
@@ -108,67 +100,34 @@ void RDContext::Initialize(WGPUInstance p_instance, RDSurface p_rdSurface) {
 #endif	// __EMSCRIPTEN__
 
 	LOG_TRACE("WEBGPU device requested");
-	wgpuAdapterRequestDevice(adapter, &deviceDesc, onDeviceRequestEnded, this);
+	wgpuAdapterRequestDevice(adapter, &deviceDesc, onDeviceRequestEnded, p_driver);
 
 #ifdef __EMSCRIPTEN__
 	LOG_TRACE("Waiting for device to be ready in Emscripten");
-	while (device == nullptr) {
+	while (p_device->device == nullptr) {
 		emscripten_sleep(100);
 	}
 #endif	// __EMSCRIPTEN__
 
-	ERR(device == nullptr,
-		"Device is null when requested ended, probably adapter is not ticking, or window is not polling");
+	ERR(p_driver->device == nullptr,
+		"Device is null when requested ended, probably browser is not supported");
 
 	// ~~~~~~~~~ QUEUE ~~~~~~~~~~
+	p_driver->queue = wgpuDeviceGetQueue(p_driver->device);
 	LOG_TRACE("WebGPU queue created");
-	queue = wgpuDeviceGetQueue(device);
 
 	LOG_INFO("Renderer context initialized");
 }
 
-WGPUShaderModule RDContext::LoadShaderModule(const std::string& filename) {
-    ZoneScoped;
-	std::cout << std::string(RESOURCE_DIR) << std::endl;
-    std::ifstream file(std::string(RESOURCE_DIR) + filename, std::ios::binary);
-    if (!file) {
-        LOG_ERROR("Failed to open shader: %s", filename.c_str());
-        throw std::runtime_error("Failed to open shader: " + filename);
-    }
-    LOG_TRACE("Shader file opened: %s", filename.c_str());
-    std::ostringstream contents;
-    contents << file.rdbuf();
-    std::string source = contents.str();
 
-    WGPUShaderModuleWGSLDescriptor shaderDesc = {
-        .chain = {
-            .next = nullptr,
-            .sType = WGPUSType_ShaderModuleWGSLDescriptor,
-        },
-        .code = source.c_str(),
-    };
-
-    WGPUShaderModuleDescriptor moduleDesc = {
-        .nextInChain = reinterpret_cast<WGPUChainedStruct*>(&shaderDesc),
-        .label = filename.c_str(),
-    };
-
-    WGPUShaderModule module = wgpuDeviceCreateShaderModule(device, &moduleDesc);
-    LOG_INFO("Shader module loaded: %s", filename.c_str());
-
-    return module;
-}
-
-RDContext::RDContext() {
+RdContext::RdContext() {
     ZoneScoped;
 	instance = nullptr;
 	adapter = nullptr;
-	device = nullptr;
-	queue = nullptr;
     yieldToBrowser = false;
 }
 
-RDContext::~RDContext() {
+RdContext::~RdContext() {
     ZoneScoped;
 	if (instance) {
 		wgpuInstanceRelease(instance);
@@ -188,31 +147,18 @@ RDContext::~RDContext() {
 	} else {
 		LOG_WARN("Adapter is null when destroying renderer context");
 	}
-	if (device) {
-		wgpuDeviceRelease(device);
-        LOG_TRACE("Device released");
-	} else {
-		LOG_WARN("Device is null when destroying renderer context");
-	}
-	if (queue) {
-		wgpuQueueRelease(queue);
-        LOG_TRACE("Queue released");
-	} else {
-		LOG_WARN("Queue is null when destroying renderer context");
-	}
 	LOG_INFO("Renderer context destroyed");
 }
 
-void RDContext::ConfigureSurface(const int& width, const int& height) {
+void RdContext::ConfigureSurface(const int& width, const int& height, const WGPUDevice& p_device) {
     ZoneScoped;
 	ERR(adapter == nullptr, "Adapter is null, possibly context is not initialized");
-	ERR(device == nullptr, "Device is null, possibly context is not initialized");
 
 	WGPUSurfaceCapabilities capabilities = {};
 	wgpuSurfaceGetCapabilities(rdSurface.surface, adapter, &capabilities);
 	WGPUSurfaceConfiguration config = {
 		.nextInChain = nullptr,
-		.device = device,
+		.device = p_device,
 		.format = capabilities.formats[0],
 		.usage = WGPUTextureUsage_RenderAttachment,
 		.viewFormatCount = 0,
@@ -228,7 +174,7 @@ void RDContext::ConfigureSurface(const int& width, const int& height) {
 	LOG_TRACE("Surface configured");
 }
 
-WGPUTextureView RDContext::NextTextureView() {
+WGPUTextureView RdContext::NextTextureView() {
     ZoneScoped;
 	WGPUSurfaceTexture surface_texture = {};
 	wgpuSurfaceGetCurrentTexture(rdSurface.surface, &surface_texture);
@@ -257,12 +203,12 @@ WGPUTextureView RDContext::NextTextureView() {
 	return target_view;
 }
 
-void RDContext::Polltick() {
+void RdContext::Polltick(const WGPUDevice& p_device) {
     ZoneScoped;
     #if defined(WEBGPU_BACKEND_DAWN)
-    wgpuDeviceTick(device);
+    wgpuDeviceTick(p_device);
 #elif defined(WEBGPU_BACKEND_WGPU)
-    wgpuDevicePoll(device, false, nullptr);
+    wgpuDevicePoll(p_device, false, nullptr);
 #elif defined(WEBGPU_BACKEND_EMSCRIPTEN)
     if (yieldToBrowser) {
         emscripten_sleep(100);

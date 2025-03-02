@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../renderer/RendererContext.hpp"
+#include "../renderer/Context.hpp"
 #include "webgpu/webgpu.h"
 
 #include <GLFW/glfw3.h>
@@ -46,11 +46,15 @@ public:
 
 private:
 	Window m_window;
-	RDContext m_context;
+	RdContext m_context;
+    RdDriver m_driver;
 	WGPURenderPipeline m_pipeline;
 	WGPUBuffer m_vertexBuffer;
     WGPUBuffer m_indexBuffer;
     WGPUBuffer m_uniformBuffer;
+    WGPUPipelineLayout m_pipelineLayout;
+    WGPUBindGroupLayout m_bindGroupLayout;
+    WGPUBindGroup m_bindGroup;
 	std::vector<Vertex> m_vertexData;
     std::vector<uint16_t> m_indexData;
 	uint32_t m_indexCount;
