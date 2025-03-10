@@ -1,6 +1,9 @@
 #pragma once
 
+#include <glm.hpp>
+
 #include "../renderer/Context.hpp"
+#include "../renderer/Vertex.hpp"
 #include "webgpu/webgpu.h"
 
 #include <GLFW/glfw3.h>
@@ -21,7 +24,7 @@ public:
 	void TerminateGui();
 	void MainLoop();
 	void UpdateGui();
-    void onResize(const int& width, const int& height);
+	void onResize(const int& width, const int& height);
 	bool isRunning();
 	void InitPipeline();
 	void InitBuffers();
@@ -31,31 +34,18 @@ public:
 	Application();
 	~Application();
 
-	struct Position {
-		float x, y;
-	};
-
-	struct Color {
-		float r, g, b;
-	};
-
-	struct Vertex {
-		Position position;
-		Color color;
-	};
-
 private:
 	Window m_window;
 	RdContext m_context;
-    RdDriver m_driver;
+	RdDriver m_driver;
 	WGPURenderPipeline m_pipeline;
 	WGPUBuffer m_vertexBuffer;
-    WGPUBuffer m_indexBuffer;
-    WGPUBuffer m_uniformBuffer;
-    WGPUPipelineLayout m_pipelineLayout;
-    WGPUBindGroupLayout m_bindGroupLayout;
-    WGPUBindGroup m_bindGroup;
+	WGPUBuffer m_indexBuffer;
+	WGPUBuffer m_uniformBuffer;
+	WGPUPipelineLayout m_pipelineLayout;
+	WGPUBindGroupLayout m_bindGroupLayout;
+	WGPUBindGroup m_bindGroup;
 	std::vector<Vertex> m_vertexData;
-    std::vector<uint16_t> m_indexData;
+	std::vector<uint16_t> m_indexData;
 	uint32_t m_indexCount;
 };

@@ -1,16 +1,8 @@
 #include "backends/imgui_impl_glfw.h"
 #include "backends/imgui_impl_wgpu.h"
+#include "glfw3webgpu.h"
 
-#include <GLFW/glfw3.h>
-#include <glfw3webgpu.h>
-#include <imgui.h>
-#include <stdint.h>
-#include <sys/types.h>
 #include <webgpu/webgpu.h>
-
-#include <cstdint>
-#include <utility>
-#include <vector>
 
 #ifdef WEBGPU_BACKEND_WGPU
 #include <webgpu/wgpu.h>
@@ -19,6 +11,8 @@
 #include "Application.hpp"
 #include "logging_macros.h"
 #include "tracy/Tracy.hpp"
+
+#include <vector>
 
 void onWindowResize(GLFWwindow* window, int width, int height) {
 	auto that = reinterpret_cast<Application*>(glfwGetWindowUserPointer(window));
@@ -60,15 +54,12 @@ bool Application::Initialize() {
 	WGPUInstance instance = wgpuCreateInstance(nullptr);
 	LOG_TRACE("WebGPU instance created");
 
-	RdSurface rdSurface(
-			glfwCreateWindowWGPUSurface(instance, m_window.handle),
-			WGPUTextureFormat_Undefined	 // format is deferred until surface is configured
-	);
+	RdSurface rdSurface(glfwCreateWindowWGPUSurface(instance, m_window.handle));
 
-    m_driver = {
-        .device = nullptr,
-        .queue = nullptr,
-    };
+	m_driver = {
+		.device = nullptr,
+		.queue = nullptr,
+	};
 
 	m_context.Initialize(instance, std::move(rdSurface), &m_driver);
 	m_context.ConfigureSurface(width, height, m_driver.device);
@@ -100,8 +91,7 @@ bool Application::InitGui() {
 	init_info.Device = m_driver.device;
 	init_info.NumFramesInFlight = 3;
 	init_info.RenderTargetFormat = m_context.rdSurface.format;
-	LOG_WARN("IMGUI: DepthStencilFormat is undefined");
-	init_info.DepthStencilFormat = WGPUTextureFormat_Undefined;
+	init_info.DepthStencilFormat = m_context.rdSurface.depthTextureFormat;
 	ImGui_ImplWGPU_Init(&init_info);
 
 	LOG_INFO("GUI initialized");
@@ -123,8 +113,13 @@ void Application::MainLoop() {
 		wgpuQueueWriteBuffer(m_driver.queue, m_uniformBuffer, 0, &currentTime, sizeof(float));
 	}
 
-	WGPUTextureView texture_view = m_context.NextTextureView();
-	if (!texture_view) {
+	WGPUTextureView textureView = m_context.NextTextureView();
+	if (!textureView) {
+		return;
+	}
+
+	WGPUTextureView depthStencilView = m_driver.NextDepthView(m_context.rdSurface);
+	if (!depthStencilView) {
 		return;
 	}
 
@@ -136,7 +131,7 @@ void Application::MainLoop() {
 
 	WGPURenderPassColorAttachment colorAttachment = {
 		.nextInChain = nullptr,
-		.view = texture_view,
+		.view = textureView,
 		.depthSlice = 0,
 		.resolveTarget = nullptr,
 		.loadOp = WGPULoadOp_Clear,
@@ -148,17 +143,34 @@ void Application::MainLoop() {
 	colorAttachment.depthSlice = WGPU_DEPTH_SLICE_UNDEFINED;
 #endif
 
+	WGPURenderPassDepthStencilAttachment depthStencilAttachment = {
+		.view = depthStencilView,
+		.depthLoadOp = WGPULoadOp_Clear,
+		.depthStoreOp = WGPUStoreOp_Store,
+		.depthClearValue = 1.0f,
+		.depthReadOnly = false,
+		.stencilLoadOp = WGPULoadOp_Clear,
+		.stencilStoreOp = WGPUStoreOp_Store,
+		.stencilClearValue = 0,
+		.stencilReadOnly = true,
+	};
+
+#ifndef WEBGPU_BACKEND_WGPU
+    depthStencilAttachment.stencilLoadOp = WGPULoadOp_Undefined;
+    depthStencilAttachment.stencilStoreOp = WGPUStoreOp_Undefined;
+#endif
+
 	WGPURenderPassDescriptor renderPassDesc = {
 		.nextInChain = nullptr,
 		.label = "My Render Pass",
 		.colorAttachmentCount = 1,
 		.colorAttachments = &colorAttachment,
-		.depthStencilAttachment = nullptr,
+		.depthStencilAttachment = &depthStencilAttachment,
 		.occlusionQuerySet = nullptr,
 		.timestampWrites = nullptr,
 	};
-
 	WGPURenderPassEncoder renderPass = wgpuCommandEncoderBeginRenderPass(encoder, &renderPassDesc);
+
 	{
 		ZoneScopedN("Render Pass");
 
@@ -202,7 +214,8 @@ void Application::MainLoop() {
 		wgpuCommandBufferRelease(commandBuffer);
 	}
 
-	wgpuTextureViewRelease(texture_view);
+	wgpuTextureViewRelease(textureView);
+	wgpuTextureViewRelease(depthStencilView);
 #ifndef __EMSCRIPTEN__
 	wgpuSurfacePresent(m_context.rdSurface.surface);
 #endif
@@ -222,8 +235,8 @@ void Application::onResize(const int& width, const int& height) {
 void Application::InitPipeline() {
 	ZoneScoped;
 
-    m_bindGroupLayout = m_driver.BindGroupLayoutCreate();
-    m_bindGroup = m_driver.BindGroupCreate(m_bindGroupLayout, m_uniformBuffer);
+	m_bindGroupLayout = m_driver.BindGroupLayoutCreate();
+	m_bindGroup = m_driver.BindGroupCreate(m_bindGroupLayout, m_uniformBuffer);
 
 	WGPUPipelineLayoutDescriptor pipelineLayoutDesc = {
 		.nextInChain = nullptr,
@@ -231,11 +244,11 @@ void Application::InitPipeline() {
 		.bindGroupLayoutCount = 1,
 		.bindGroupLayouts = &m_bindGroupLayout,
 	};
-    m_pipelineLayout = wgpuDeviceCreatePipelineLayout(m_driver.device, &pipelineLayoutDesc);
+	m_pipelineLayout = wgpuDeviceCreatePipelineLayout(m_driver.device, &pipelineLayoutDesc);
 
-    m_pipeline = m_driver.PipelineCreate(m_context.rdSurface, m_pipelineLayout);
+	m_pipeline = m_driver.PipelineCreate(m_context.rdSurface, m_pipelineLayout);
 
-    LOG_INFO("Pipeline initialized");
+	LOG_INFO("Pipeline initialized");
 }
 
 void Application::UpdateGui() {
@@ -249,7 +262,7 @@ void Application::UpdateGui() {
 			char label[64];
 			snprintf(label, sizeof(label), "Vertex %zu", i);
 			if (ImGui::TreeNode(label)) {
-				ImGui::SliderFloat2("Position", &m_vertexData[i].position.x, -1.0f, 1.0f);
+				ImGui::SliderFloat3("Position", &m_vertexData[i].position.x, -1.0f, 1.0f);
 				ImGui::ColorPicker3("Color", &m_vertexData[i].color.r);
 				ImGui::TreePop();
 			}
@@ -264,17 +277,10 @@ void Application::UpdateGui() {
 
 void Application::InitBuffers() {
 	ZoneScoped;
-	// Define your vertex data
-	m_vertexData = {
-		{ { -0.5f, -0.5f }, { 1.0f, 0.0f, 0.0f } },
-		{ { +0.5f, -0.5f }, { 0.0f, 0.0f, 1.0f } },
-		{ { +0.5f, +0.5f }, { 1.0f, 0.0f, 1.0f } },
-		{ { -0.5f, +0.5f }, { 0.0f, 1.0f, 0.0f } },
-	};
-
-	m_indexData = {
-		0, 1, 2, 0, 2, 3,
-	};
+	bool loadGeometryQuery = m_driver.GeometryLoad("pyramid.txt", m_vertexData, m_indexData);
+	if (!loadGeometryQuery) {
+		LOG_ERROR("Failed to load geometry");
+	}
 
 	m_indexCount = static_cast<uint32_t>(m_indexData.size());
 

@@ -5,9 +5,12 @@
 struct RdSurface {
 	WGPUSurface surface;
 	WGPUTextureFormat format;
+    WGPUTextureFormat depthTextureFormat;
+    uint32_t width;
+    uint32_t height;
 
-	RdSurface() : surface(nullptr), format(WGPUTextureFormat_Undefined) {}
-	RdSurface(WGPUSurface s, WGPUTextureFormat f) : surface(s), format(f) {}
+	RdSurface() : surface(nullptr), format(WGPUTextureFormat_Undefined), depthTextureFormat(WGPUTextureFormat_Undefined), width(0), height(0) {}
+	RdSurface(WGPUSurface s) : surface(s), format(WGPUTextureFormat_Undefined), depthTextureFormat(WGPUTextureFormat_Undefined), width(0), height(0) {}
 
 	RdSurface(const RdSurface&) = delete;
 	RdSurface& operator=(const RdSurface&) = delete;

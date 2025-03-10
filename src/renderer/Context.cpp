@@ -3,7 +3,6 @@
 #include "logging_macros.h"
 
 #include <webgpu/webgpu.h>
-#include <stdexcept>
 
 #ifdef WEBGPU_BACKEND_WGPU
 #include <webgpu/wgpu.h>   
@@ -29,7 +28,7 @@ static void onAdapterRequestEnded(
     RdContext& context = *reinterpret_cast<RdContext*>(userdata);
 	if (status == WGPURequestAdapterStatus_Success || status == 1) {
         context.adapter = p_adapter;
-		LOG_TRACE("  ~  got WebGPU adapter! %p", p_adapter);
+		LOG_TRACE("  ~  got WebGPU adapter! %p", (void*)p_adapter);
         ERR(context.adapter == nullptr, "Adapter is null when requested ended and status is success. Browser is not supported");
 	} else {
 		ERR(true, "WebGPU could not get adapter: %s", message);
@@ -56,6 +55,8 @@ void onDeviceRequestEnded(
 void RdContext::Initialize(WGPUInstance p_instance, RdSurface p_rdSurface, RdDriver* p_driver) {
     ZoneScoped;
 	instance = p_instance;
+
+    ERR(p_rdSurface.surface == nullptr, "Surface is null when initializing renderer context");
 	rdSurface = std::move(p_rdSurface);
 
 	// ~~~~~~~~~ ADAPTER ~~~~~~~~~~
@@ -93,6 +94,9 @@ void RdContext::Initialize(WGPUInstance p_instance, RdSurface p_rdSurface, RdDri
         },
         .deviceLostCallback = nullptr,
         .deviceLostUserdata = nullptr,
+#ifdef WEBGPU_BACKEND_WGPU
+        .uncapturedErrorCallbackInfo = {},
+#endif  // WEBGPU_BACKEND_WGPU
     };
 
 #ifndef __EMSCRIPTEN__
@@ -104,7 +108,7 @@ void RdContext::Initialize(WGPUInstance p_instance, RdSurface p_rdSurface, RdDri
 
 #ifdef __EMSCRIPTEN__
 	LOG_TRACE("Waiting for device to be ready in Emscripten");
-	while (p_device->device == nullptr) {
+	while (p_driver->device == nullptr) {
 		emscripten_sleep(100);
 	}
 #endif	// __EMSCRIPTEN__
@@ -159,16 +163,17 @@ void RdContext::ConfigureSurface(const int& width, const int& height, const WGPU
 	WGPUSurfaceConfiguration config = {
 		.nextInChain = nullptr,
 		.device = p_device,
-		.format = capabilities.formats[0],
+		.format = rdSurface.format = capabilities.formats[0],
 		.usage = WGPUTextureUsage_RenderAttachment,
 		.viewFormatCount = 0,
 		.viewFormats = nullptr,
 		.alphaMode = WGPUCompositeAlphaMode_Auto,
-		.width = static_cast<uint32_t>(width),
-		.height = static_cast<uint32_t>(height),
+		.width = rdSurface.width = static_cast<uint32_t>(width),
+		.height = rdSurface.height = static_cast<uint32_t>(height),
 		.presentMode = WGPUPresentMode_Fifo,
 	};
-	rdSurface.format = capabilities.formats[0];
+
+    rdSurface.depthTextureFormat = WGPUTextureFormat_Depth24Plus;
 
 	wgpuSurfaceConfigure(rdSurface.surface, &config);
 	LOG_TRACE("Surface configured");
@@ -176,17 +181,17 @@ void RdContext::ConfigureSurface(const int& width, const int& height, const WGPU
 
 WGPUTextureView RdContext::NextTextureView() {
     ZoneScoped;
-	WGPUSurfaceTexture surface_texture = {};
-	wgpuSurfaceGetCurrentTexture(rdSurface.surface, &surface_texture);
+	WGPUSurfaceTexture surfaceTexture = {};
+	wgpuSurfaceGetCurrentTexture(rdSurface.surface, &surfaceTexture);
 
-	if (surface_texture.status != WGPUSurfaceGetCurrentTextureStatus_Success) {
+	if (surfaceTexture.status != WGPUSurfaceGetCurrentTextureStatus_Success) {
 		return nullptr;
 	}
 
 	WGPUTextureViewDescriptor viewDescriptor = {
 		.nextInChain = nullptr,
 		.label = "Surface texture view",
-		.format = wgpuTextureGetFormat(surface_texture.texture),
+		.format = wgpuTextureGetFormat(surfaceTexture.texture),
 		.dimension = WGPUTextureViewDimension_2D,
 		.baseMipLevel = 0,
 		.mipLevelCount = 1,
@@ -194,16 +199,21 @@ WGPUTextureView RdContext::NextTextureView() {
 		.arrayLayerCount = 1,
 		.aspect = WGPUTextureAspect_All,
 	};
-	WGPUTextureView target_view = wgpuTextureCreateView(surface_texture.texture, &viewDescriptor);
+
+    rdSurface.depthTextureFormat = WGPUTextureFormat_Depth24Plus;
+
+	WGPUTextureView targetView = wgpuTextureCreateView(surfaceTexture.texture, &viewDescriptor);
 
 #ifndef WEBGPU_BACKEND_WGPU
-	wgpuTextureRelease(surface_texture.texture);
+	wgpuTextureRelease(surfaceTexture.texture);
 #endif
 
-	return target_view;
+	return targetView;
 }
 
+
 void RdContext::Polltick(const WGPUDevice& p_device) {
+    (void)p_device;
     ZoneScoped;
     #if defined(WEBGPU_BACKEND_DAWN)
     wgpuDeviceTick(p_device);

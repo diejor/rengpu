@@ -11,8 +11,15 @@ set_target_properties(app PROPERTIES
     COMPILE_WARNINGS_AS_ERRORS ON
 )
 
-target_include_directories(app PUBLIC
+if (MSVC)
+    target_compile_options(app PRIVATE /W4)
+else ()
+    target_compile_options(app PRIVATE -Wall -Wextra -pedantic)
+endif ()
+
+target_include_directories(app PRIVATE
     Application.hpp
+    ${CMAKE_SOURCE_DIR}/vendor/glm
 )
 
 # include directories here
@@ -27,17 +34,11 @@ target_link_libraries(app PRIVATE
 )
 
 
-
+# install shared libraries next to the binary on Linux
 if(UNIX AND NOT APPLE)
     set_target_properties(app PROPERTIES INSTALL_RPATH "$ORIGIN")
 endif()
 
-if (MSVC)
-    target_compile_options(app PRIVATE /W4)
-
-else ()
-    target_compile_options(app PRIVATE -Wall -Wextra -pedantic)
-endif ()
 
 if (XCODE)
     set_target_properties(app PROPERTIES
