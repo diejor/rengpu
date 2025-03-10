@@ -13,7 +13,7 @@
 int main() {
     Application app;   
 
-    if (!app.Initialize()) {
+    if (!app.initialize()) {
         return -1;
     }
     
@@ -25,11 +25,11 @@ int main() {
 	emscripten_set_main_loop_arg(callback, &app, 0, true);
 #else // __EMSCRIPTEN__
 	while (app.isRunning()) {
-		app.MainLoop();
+		app.mainLoop();
 	}
 #endif // __EMSCRIPTEN__
 
-    app.Terminate();
+    app.terminate();
 
     return 0;
 }

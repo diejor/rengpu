@@ -2,15 +2,15 @@
 
 #include "Surface.hpp"
 #include "Driver.hpp"
-#include <webgpu/webgpu.h>
+#include <webgpu/webgpu.hpp>
 
 class Window;
 
 struct RdContext {
-	void Initialize(WGPUInstance p_instance, RdSurface p_rdSurface, RdDriver* p_driver);
-    void ConfigureSurface(const int& p_width, const int& p_height, const WGPUDevice& p_device);
-    void Polltick(const WGPUDevice& p_device);
-    WGPUTextureView NextTextureView();
+	void initialize(wgpu::Instance p_instance, RdSurface p_rdSurface, RdDriver* p_driver);
+    void configureSurface(const int& p_width, const int& p_height, const WGPUDevice& p_device);
+    void polltick(const wgpu::Device& p_device);
+    WGPUTextureView nextTextureView();
 
 	RdContext();
 	~RdContext();
@@ -18,8 +18,8 @@ struct RdContext {
 	RdContext& operator=(const RdContext&) = delete;
 	RdContext& operator=(const RdContext&&) = delete;
 
-	WGPUInstance instance;
+    wgpu::Instance instance;
 	RdSurface rdSurface;
-	WGPUAdapter adapter;
+    wgpu::Adapter adapter;
     bool yieldToBrowser;
 };

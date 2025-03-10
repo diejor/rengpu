@@ -2,23 +2,24 @@
 
 #include "Surface.hpp"
 #include "Vertex.hpp"
-#include <webgpu/webgpu.h>
 #include <filesystem>
 #include <vector>
 
+#include <webgpu/webgpu.hpp>
+
 struct RdDriver {
-    WGPURenderPipeline PipelineCreate(const RdSurface& p_rdSurface, const WGPUPipelineLayout& p_pipelineLayout);
-    WGPUBindGroupLayout BindGroupLayoutCreate();
-    WGPUBindGroup BindGroupCreate(const WGPUBindGroupLayout& p_layout, const WGPUBuffer& p_buffer);
-    WGPUTextureView NextDepthView(const RdSurface& rdSurface);
-    WGPUShaderModule ShaderModuleLoad(const std::filesystem::path& filename);
-	bool GeometryLoad(
+    wgpu::RenderPipeline createPipeline(const RdSurface& p_rdSurface, const wgpu::PipelineLayout& p_pipelineLayout);
+    wgpu::BindGroupLayout createBindGroupLayout();
+    wgpu::BindGroup createBindGroup(const wgpu::BindGroupLayout& p_layout, wgpu::Buffer& p_buffer);
+    wgpu::TextureView nextDepthView(const RdSurface& rdSurface);
+    wgpu::ShaderModule loadShaderModule(const std::filesystem::path& filename);
+	bool loadGeometry(
 			const std::filesystem::path& filename,
 			std::vector<Vertex>& vertices,
 			std::vector<uint16_t>& indices
 	);
 
-	WGPUDevice device;
-	WGPUQueue queue;
+    wgpu::Device device;
+    wgpu::Queue queue;
 };
 

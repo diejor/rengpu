@@ -1,33 +1,26 @@
+#include "Application.hpp"
+
 #include "backends/imgui_impl_glfw.h"
 #include "backends/imgui_impl_wgpu.h"
 #include "glfw3webgpu.h"
-
-#include <webgpu/webgpu.h>
-
-#ifdef WEBGPU_BACKEND_WGPU
-#include <webgpu/wgpu.h>
-#endif	// WEBGPU_BACKEND_WGPU
-
-#include "Application.hpp"
 #include "logging_macros.h"
 #include "tracy/Tracy.hpp"
 
 #include <vector>
 
+// Callback for GLFW framebuffer resize
 void onWindowResize(GLFWwindow* window, int width, int height) {
 	auto that = reinterpret_cast<Application*>(glfwGetWindowUserPointer(window));
-
-	// Call the actual class-member callback
 	if (that != nullptr) that->onResize(width, height);
 }
 
-Application::Window Application::CreateWindow(int width, int height, const char* title) {
+Application::Window Application::createWindow(int width, int height, const char* title) {
 	ZoneScoped;
 	glfwInit();
-
 	glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
+
 	Window window = {
-		.handle = glfwCreateWindow(width, height, title, NULL, NULL),
+		.handle = glfwCreateWindow(width, height, title, nullptr, nullptr),
 		.width = width,
 		.height = height,
 	};
@@ -45,15 +38,18 @@ Application::Window Application::CreateWindow(int width, int height, const char*
 	return window;
 }
 
-bool Application::Initialize() {
+bool Application::initialize() {
 	ZoneScoped;
 	int width = 800;
 	int height = 600;
-	m_window = CreateWindow(width, height, "WebGPU");
+	m_window = createWindow(width, height, "WebGPU");
 
-	WGPUInstance instance = wgpuCreateInstance(nullptr);
+	// Create a WebGPU instance using the C++ wrapper.
+	wgpu::InstanceDescriptor instanceDesc = {};
+	wgpu::Instance instance = wgpu::createInstance(instanceDesc);
 	LOG_TRACE("WebGPU instance created");
 
+	// Create the surface using GLFW helper (assume the wrapper offers a compatible conversion)
 	RdSurface rdSurface(glfwCreateWindowWGPUSurface(instance, m_window.handle));
 
 	m_driver = {
@@ -61,73 +57,65 @@ bool Application::Initialize() {
 		.queue = nullptr,
 	};
 
-	m_context.Initialize(instance, std::move(rdSurface), &m_driver);
-	m_context.ConfigureSurface(width, height, m_driver.device);
+	m_context.initialize(instance, std::move(rdSurface), &m_driver);
+	m_context.configureSurface(width, height, m_driver.device);
 
-	InitBuffers();
-	InitPipeline();
+	initBuffers();
+	initPipeline();
 
-	if (!InitGui()) {
-		return false;
-	}
+	if (!initGui()) return false;
 
 	LOG_INFO("Application initialized");
 	return true;
 }
 
-bool Application::InitGui() {
+bool Application::initGui() {
 	ZoneScoped;
-	// Setup Dear ImGui context
 	IMGUI_CHECKVERSION();
 	ImGui::CreateContext();
 	ImGui::GetIO();
 
-	// Setup Platform/Renderer backends
 	ImGui_ImplGlfw_InitForOther(m_window.handle, true);
 #ifdef __EMSCRIPTEN__
 	ImGui_ImplGlfw_InstallEmscriptenCallbacks(m_window.handle, "#canvas");
 #endif
-	ImGui_ImplWGPU_InitInfo init_info = {};
-	init_info.Device = m_driver.device;
-	init_info.NumFramesInFlight = 3;
-	init_info.RenderTargetFormat = m_context.rdSurface.format;
-	init_info.DepthStencilFormat = m_context.rdSurface.depthTextureFormat;
-	ImGui_ImplWGPU_Init(&init_info);
+
+	// Use designated initializer to create a RenderInitInfo struct
+	ImGui_ImplWGPU_InitInfo initInfo = {};
+	initInfo.Device = m_driver.device;
+	initInfo.NumFramesInFlight = 3;
+	initInfo.RenderTargetFormat = m_context.rdSurface.format;
+	initInfo.DepthStencilFormat = m_context.rdSurface.depthTextureFormat;
+
+	ImGui_ImplWGPU_Init(&initInfo);
 
 	LOG_INFO("GUI initialized");
 	return true;
 }
 
-void Application::MainLoop() {
+void Application::mainLoop() {
 	FrameMark;
 	ZoneScoped;
 	glfwPollEvents();
-	UpdateGui();
+	updateGui();
 
 	{
 		ZoneScopedN("Update Buffers");
-		wgpuQueueWriteBuffer(
-				m_driver.queue, m_vertexBuffer, 0, m_vertexData.data(), m_vertexData.size() * sizeof(Vertex)
-		);
+		m_driver.queue.writeBuffer(m_vertexBuffer, 0, m_vertexData.data(), m_vertexData.size() * sizeof(Vertex));
 		float currentTime = static_cast<float>(glfwGetTime());
-		wgpuQueueWriteBuffer(m_driver.queue, m_uniformBuffer, 0, &currentTime, sizeof(float));
+		m_driver.queue.writeBuffer(m_uniformBuffer, 0, &currentTime, sizeof(float));
 	}
 
-	WGPUTextureView textureView = m_context.NextTextureView();
-	if (!textureView) {
-		return;
-	}
+	wgpu::TextureView textureView = m_context.nextTextureView();
+	if (!textureView) return;
 
-	WGPUTextureView depthStencilView = m_driver.NextDepthView(m_context.rdSurface);
-	if (!depthStencilView) {
-		return;
-	}
+	wgpu::TextureView depthStencilView = m_driver.nextDepthView(m_context.rdSurface);
+	if (!depthStencilView) return;
 
-	WGPUCommandEncoderDescriptor encoderDesc = {
-		.nextInChain = nullptr,
-		.label = "My Encoder",
-	};
-	WGPUCommandEncoder encoder = wgpuDeviceCreateCommandEncoder(m_driver.device, &encoderDesc);
+	wgpu::CommandEncoder encoder = m_driver.device.createCommandEncoder(WGPUCommandEncoderDescriptor{
+			.nextInChain = nullptr,
+			.label = "My Command Encoder",
+	});
 
 	WGPURenderPassColorAttachment colorAttachment = {
 		.nextInChain = nullptr,
@@ -156,41 +144,29 @@ void Application::MainLoop() {
 	};
 
 #ifndef WEBGPU_BACKEND_WGPU
-    depthStencilAttachment.stencilLoadOp = WGPULoadOp_Undefined;
-    depthStencilAttachment.stencilStoreOp = WGPUStoreOp_Undefined;
+	depthStencilAttachment.stencilLoadOp = WGPULoadOp_Undefined;
+	depthStencilAttachment.stencilStoreOp = WGPUStoreOp_Undefined;
 #endif
-
-	WGPURenderPassDescriptor renderPassDesc = {
-		.nextInChain = nullptr,
-		.label = "My Render Pass",
-		.colorAttachmentCount = 1,
-		.colorAttachments = &colorAttachment,
-		.depthStencilAttachment = &depthStencilAttachment,
-		.occlusionQuerySet = nullptr,
-		.timestampWrites = nullptr,
-	};
-	WGPURenderPassEncoder renderPass = wgpuCommandEncoderBeginRenderPass(encoder, &renderPassDesc);
 
 	{
 		ZoneScopedN("Render Pass");
+		wgpu::RenderPassEncoder renderPass = encoder.beginRenderPass(WGPURenderPassDescriptor{
+				.nextInChain = nullptr,
+				.label = "My Render Pass",
+				.colorAttachmentCount = 1,
+				.colorAttachments = &colorAttachment,
+				.depthStencilAttachment = &depthStencilAttachment,
+				.occlusionQuerySet = nullptr,
+				.timestampWrites = nullptr,
+		});
 
-		wgpuRenderPassEncoderSetPipeline(renderPass, m_pipeline);
-		wgpuRenderPassEncoderSetVertexBuffer(renderPass, 0, m_vertexBuffer, 0, wgpuBufferGetSize(m_vertexBuffer));
-		wgpuRenderPassEncoderSetIndexBuffer(
-				renderPass, m_indexBuffer, WGPUIndexFormat_Uint16, 0, wgpuBufferGetSize(m_indexBuffer)
-		);
-		wgpuRenderPassEncoderSetBindGroup(renderPass, 0, m_bindGroup, 0, nullptr);
-		wgpuRenderPassEncoderDrawIndexed(renderPass, m_indexCount, 1, 0, 0, 0);
+		renderPass.setPipeline(m_pipeline);
+		renderPass.setVertexBuffer(0, m_vertexBuffer, 0, m_vertexBuffer.getSize());
+		renderPass.setIndexBuffer(m_indexBuffer, WGPUIndexFormat_Uint16, 0, m_indexBuffer.getSize());
+		renderPass.setBindGroup(0, m_bindGroup, 0, nullptr);
+		renderPass.drawIndexed(m_indexCount, 1, 0, 0, 0);
 
-		// Not sure how to check that FrameBuffer size is valid just in time when imgui has to be rendered.
-		// The FrameBuffer size might change in the middle of the frame, after glfwPollEvents() is called.
-		// In that case, onResize configured the surface with an old size, and the new size is not yet configured.
-		// So, we need to check if the FrameBuffer size is the same as the window size.
-		//
-		// This is a workaround for the issue, but there should be a way to check if the FrameBuffer size is valid
-		// without checking the window size every frame.
-		// I tried storing a skipFrame bool in the class and adding two glfwPollEvents() calls, one to configure
-		// the surface when possible, and the other to check if the FrameBuffer size is valid. But it didn't work.
+		// Check framebuffer size before rendering ImGui
 		{
 			ZoneScopedN("FrameBuffer size check");
 			int currentWidth, currentHeight;
@@ -200,58 +176,55 @@ void Application::MainLoop() {
 			}
 		}
 
-		wgpuRenderPassEncoderEnd(renderPass);
-		wgpuRenderPassEncoderRelease(renderPass);
-
-		WGPUCommandBufferDescriptor commandBufferDesc = {
-			.nextInChain = nullptr,
-			.label = "My Command Buffer",
-		};
-		WGPUCommandBuffer commandBuffer = wgpuCommandEncoderFinish(encoder, &commandBufferDesc);
-		wgpuCommandEncoderRelease(encoder);
-
-		wgpuQueueSubmit(m_driver.queue, 1, &commandBuffer);
-		wgpuCommandBufferRelease(commandBuffer);
+		renderPass.end();
+		renderPass.release();
 	}
 
-	wgpuTextureViewRelease(textureView);
-	wgpuTextureViewRelease(depthStencilView);
+	wgpu::CommandBuffer commandBuffer = encoder.finish(WGPUCommandBufferDescriptor{
+			.nextInChain = nullptr,
+			.label = "My Command Buffer",
+	});
+
+	encoder.release();
+	m_driver.queue.submit(commandBuffer);
+	commandBuffer.release();
+
+	textureView.release();
+	depthStencilView.release();
 #ifndef __EMSCRIPTEN__
-	wgpuSurfacePresent(m_context.rdSurface.surface);
+	m_context.rdSurface.surface.present();
 #endif
 
-	m_context.Polltick(m_driver.device);
+	m_context.polltick(m_driver.device);
 }
 
 void Application::onResize(const int& width, const int& height) {
 	ZoneScoped;
 	LOG_TRACE("Window resized to %d x %d", width, height);
-
-	m_context.ConfigureSurface(width, height, m_driver.device);
+	m_context.configureSurface(width, height, m_driver.device);
 	m_window.width = width;
 	m_window.height = height;
 }
 
-void Application::InitPipeline() {
+void Application::initPipeline() {
 	ZoneScoped;
 
-	m_bindGroupLayout = m_driver.BindGroupLayoutCreate();
-	m_bindGroup = m_driver.BindGroupCreate(m_bindGroupLayout, m_uniformBuffer);
+	m_bindGroupLayout = m_driver.createBindGroupLayout();
+	m_bindGroup = m_driver.createBindGroup(m_bindGroupLayout, m_uniformBuffer);
 
-	WGPUPipelineLayoutDescriptor pipelineLayoutDesc = {
-		.nextInChain = nullptr,
-		.label = "My Pipeline Layout",
-		.bindGroupLayoutCount = 1,
-		.bindGroupLayouts = &m_bindGroupLayout,
-	};
-	m_pipelineLayout = wgpuDeviceCreatePipelineLayout(m_driver.device, &pipelineLayoutDesc);
+	m_pipelineLayout = m_driver.device.createPipelineLayout(WGPUPipelineLayoutDescriptor{
+			.nextInChain = nullptr,
+			.label = "My Pipeline Layout",
+			.bindGroupLayoutCount = 1,
+			.bindGroupLayouts = (WGPUBindGroupLayout*)&m_bindGroupLayout,
+	});
 
-	m_pipeline = m_driver.PipelineCreate(m_context.rdSurface, m_pipelineLayout);
+	m_pipeline = m_driver.createPipeline(m_context.rdSurface, m_pipelineLayout);
 
 	LOG_INFO("Pipeline initialized");
 }
 
-void Application::UpdateGui() {
+void Application::updateGui() {
 	ZoneScoped;
 	ImGui_ImplWGPU_NewFrame();
 	ImGui_ImplGlfw_NewFrame();
@@ -269,113 +242,109 @@ void Application::UpdateGui() {
 		}
 	}
 	ImGui::End();
-
-	// Render ImGui
 	ImGui::EndFrame();
 	ImGui::Render();
 }
 
-void Application::InitBuffers() {
+uint32_t align(uint32_t offset, uint32_t align) {
+    return (offset + align - 1) & ~(align - 1);
+}
+
+void Application::initBuffers() {
 	ZoneScoped;
-	bool loadGeometryQuery = m_driver.GeometryLoad("pyramid.txt", m_vertexData, m_indexData);
+	bool loadGeometryQuery = m_driver.loadGeometry("pyramid.txt", m_vertexData, m_indexData);
 	if (!loadGeometryQuery) {
 		LOG_ERROR("Failed to load geometry");
 	}
 
 	m_indexCount = static_cast<uint32_t>(m_indexData.size());
 
-	WGPUBufferDescriptor vertexBufferDesc = {
-		.nextInChain = nullptr,
-		.label = "My Vertex Buffer",
-		.usage = WGPUBufferUsage_Vertex | WGPUBufferUsage_CopyDst,
-		.size = m_vertexData.size() * sizeof(Vertex),
-		.mappedAtCreation = false,
-	};
-	vertexBufferDesc.size = (vertexBufferDesc.size + 3) & ~3;
+	m_vertexBuffer = m_driver.device.createBuffer(WGPUBufferDescriptor{
+			.nextInChain = nullptr,
+			.label = "My Vertex Buffer",
+			.usage = WGPUBufferUsage_Vertex | WGPUBufferUsage_CopyDst,
+			.size = align(m_vertexData.size() * sizeof(Vertex), 4),
+			.mappedAtCreation = false,
+	});
 
-	WGPUBufferDescriptor indexBufferDesc = {
-		.nextInChain = nullptr,
-		.label = "My Index Buffer",
-		.usage = WGPUBufferUsage_Index | WGPUBufferUsage_CopyDst,
-		.size = m_indexData.size() * sizeof(uint16_t),
-		.mappedAtCreation = false,
-	};
-	indexBufferDesc.size = (indexBufferDesc.size + 3) & ~3;
+	m_indexBuffer = m_driver.device.createBuffer(WGPUBufferDescriptor{
+			.nextInChain = nullptr,
+			.label = "My Index Buffer",
+			.usage = WGPUBufferUsage_Index | WGPUBufferUsage_CopyDst,
+			.size = align(m_indexData.size() * sizeof(uint16_t), 4),
+			.mappedAtCreation = false,
+	});
 
-	WGPUBufferDescriptor uniformBufferDesc = {
-		.nextInChain = nullptr,
-		.label = "My Uniform Buffer",
-		.usage = WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst,
-		.size = 4 * sizeof(float),
-		.mappedAtCreation = false,
-	};
+	m_uniformBuffer = m_driver.device.createBuffer(WGPUBufferDescriptor{
+			.nextInChain = nullptr,
+			.label = "My Uniform Buffer",
+			.usage = WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst,
+			.size = align(sizeof(float), 16),
+			.mappedAtCreation = false,
+	});
 
-	m_vertexBuffer = wgpuDeviceCreateBuffer(m_driver.device, &vertexBufferDesc);
-	m_indexBuffer = wgpuDeviceCreateBuffer(m_driver.device, &indexBufferDesc);
-	m_uniformBuffer = wgpuDeviceCreateBuffer(m_driver.device, &uniformBufferDesc);
-
-	wgpuQueueWriteBuffer(m_driver.queue, m_vertexBuffer, 0, m_vertexData.data(), vertexBufferDesc.size);
-	wgpuQueueWriteBuffer(m_driver.queue, m_indexBuffer, 0, m_indexData.data(), indexBufferDesc.size);
+	m_driver.queue.writeBuffer(m_vertexBuffer, 0, m_vertexData.data(), m_vertexBuffer.getSize());
+	m_driver.queue.writeBuffer(m_indexBuffer, 0, m_indexData.data(), m_indexBuffer.getSize());
 
 	float currentTime = 1.0f;
-	wgpuQueueWriteBuffer(m_driver.queue, m_uniformBuffer, 0, &currentTime, sizeof(float));
+	m_driver.queue.writeBuffer(m_uniformBuffer, 0, &currentTime, m_uniformBuffer.getSize());
 
 	LOG_INFO("Buffers initialized");
-}
-
-Application::Application() {
-	ZoneScoped;
-	LOG_INFO("Application created");
 }
 
 bool Application::isRunning() {
 	return !glfwWindowShouldClose(m_window.handle);
 }
 
-void Application::Terminate() {
+void Application::terminate() {
 	ZoneScoped;
 	if (m_window.handle != nullptr) {
 		glfwDestroyWindow(m_window.handle);
 		LOG_TRACE("Application window destroyed");
 	}
 	if (m_pipeline != nullptr) {
-		wgpuRenderPipelineRelease(m_pipeline);
+		m_pipeline.release();
 		LOG_TRACE("Pipeline destroyed");
 	}
 	if (m_vertexBuffer != nullptr) {
-		wgpuBufferRelease(m_vertexBuffer);
+		m_vertexBuffer.release();
 		LOG_TRACE("Buffers destroyed");
 	}
 	if (m_indexBuffer != nullptr) {
-		wgpuBufferRelease(m_indexBuffer);
+		m_indexBuffer.release();
 		LOG_TRACE("Index buffer destroyed");
 	}
 	if (m_uniformBuffer != nullptr) {
-		wgpuBufferRelease(m_uniformBuffer);
+		m_uniformBuffer.release();
 		LOG_TRACE("Uniform buffer destroyed");
 	}
 	if (m_pipelineLayout != nullptr) {
-		wgpuPipelineLayoutRelease(m_pipelineLayout);
+		m_pipelineLayout.release();
 		LOG_TRACE("Pipeline layout destroyed");
 	}
 	if (m_bindGroupLayout != nullptr) {
-		wgpuBindGroupLayoutRelease(m_bindGroupLayout);
+		m_bindGroupLayout.release();
 		LOG_TRACE("Bind group layout destroyed");
 	}
 	if (m_bindGroup != nullptr) {
-		wgpuBindGroupRelease(m_bindGroup);
+		m_bindGroup.release();
 		LOG_TRACE("Bind group destroyed");
 	}
-	TerminateGui();
+	terminateGui();
 	glfwTerminate();
 }
 
-void Application::TerminateGui() {
+void Application::terminateGui() {
 	ZoneScoped;
 	ImGui_ImplWGPU_Shutdown();
 	ImGui_ImplGlfw_Shutdown();
 	ImGui::DestroyContext();
 	LOG_INFO("GUI terminated");
+}
+
+Application::Application() {
+	ZoneScoped;
+	LOG_INFO("Application created");
 }
 
 Application::~Application() {

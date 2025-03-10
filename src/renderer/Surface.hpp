@@ -1,11 +1,11 @@
 #pragma once
 
-#include <webgpu/webgpu.h>
+#include <webgpu/webgpu.hpp>
 
 struct RdSurface {
-	WGPUSurface surface;
-	WGPUTextureFormat format;
-    WGPUTextureFormat depthTextureFormat;
+    wgpu::Surface surface;
+    wgpu::TextureFormat format;
+    wgpu::TextureFormat depthTextureFormat;
     uint32_t width;
     uint32_t height;
 
@@ -19,7 +19,7 @@ struct RdSurface {
 	// Only allow to move surfaces since WGPUSurface stores a pointer to window resources.
 	// ~~~~~~~~~~~~~
 	RdSurface(RdSurface&& other) noexcept :
-			surface(other.surface), format(other.format) {
+			surface(other.surface), format(other.format), depthTextureFormat(other.depthTextureFormat), width(other.width), height(other.height) {
 		other.surface = nullptr;
 	}
 	RdSurface& operator=(RdSurface&& other) noexcept {

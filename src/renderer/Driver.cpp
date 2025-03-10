@@ -1,69 +1,70 @@
-#include <fstream>
+#include <webgpu/webgpu.h>
 
-// for file reading in loadShaderModule, maybe move to ResourceManager later
+#include <filesystem>
 #include <fstream>
+#include <iostream>
 #include <sstream>
 #include <stdexcept>
 #include <string>
-#include <iostream>
-
-
-#include <webgpu/webgpu.h>
-#include <tracy/Tracy.hpp>
 #include <vector>
 
+#define WEBGPU_CPP_IMPLEMENTATION
 #include "Driver.hpp"
 #include "logging_macros.h"
 
+#include <tracy/Tracy.hpp>
+#include <webgpu/webgpu.hpp>
 
-WGPURenderPipeline RdDriver::PipelineCreate(const RdSurface& p_rdSurface, const WGPUPipelineLayout& p_pipelineLayout) {
-    ZoneScoped;
-	WGPUShaderModule module = ShaderModuleLoad("triangles.wgsl");
+wgpu::RenderPipeline RdDriver::createPipeline(const RdSurface& rdSurface, const wgpu::PipelineLayout& pipelineLayout) {
+	ZoneScoped;
+	// Load shader module using wrapper method.
+	wgpu::ShaderModule module = loadShaderModule("triangles.wgsl");
 
-	WGPUVertexAttribute posAttribute = {
-		.format = WGPUVertexFormat_Float32x3,
+	// For vertex attributes and other descriptor types that are not handles, we use the WGPU C types.
+	WGPUVertexAttribute positionAtt = {
+		.format = wgpu::VertexFormat::Float32x3,
 		.offset = 0,
 		.shaderLocation = 0,
 	};
 
-	WGPUVertexAttribute colorAttribute = {
-		.format = WGPUVertexFormat_Float32x3,
+	WGPUVertexAttribute colorAtt = {
+		.format = wgpu::VertexFormat::Float32x3,
 		.offset = 3 * sizeof(float),
 		.shaderLocation = 1,
 	};
 
-	std::vector<WGPUVertexAttribute> attributes = { posAttribute, colorAttribute };
+	std::vector<WGPUVertexAttribute> attributes = { positionAtt, colorAtt };
 
 	WGPUVertexBufferLayout vertexBufferLayout = {
 		.arrayStride = 6 * sizeof(float),
-		.stepMode = WGPUVertexStepMode_Vertex,
+		.stepMode = wgpu::VertexStepMode::Vertex,
 		.attributeCount = 2,
 		.attributes = attributes.data(),
 	};
 
 	WGPUBlendState blendState = {
         .color = {
-            .operation = WGPUBlendOperation_Add,
-            .srcFactor = WGPUBlendFactor_SrcAlpha,
-            .dstFactor = WGPUBlendFactor_OneMinusSrcAlpha,
+            .operation = wgpu::BlendOperation::Add,
+            .srcFactor = wgpu::BlendFactor::SrcAlpha,
+            .dstFactor = wgpu::BlendFactor::OneMinusSrcAlpha,
         },
         .alpha = {
-            .operation = WGPUBlendOperation_Add,
-            .srcFactor = WGPUBlendFactor_Zero,
-            .dstFactor = WGPUBlendFactor_One,
+            .operation = wgpu::BlendOperation::Add,
+            .srcFactor = wgpu::BlendFactor::Zero,
+            .dstFactor = wgpu::BlendFactor::One,
         },
     };
 
 	WGPUColorTargetState colorTargetState = {
 		.nextInChain = nullptr,
-		.format = p_rdSurface.format,
+		.format = rdSurface.format,
 		.blend = &blendState,
-		.writeMask = WGPUColorWriteMask_All,
+		.writeMask = wgpu::ColorWriteMask::All,
 	};
 
 	WGPUFragmentState fragmentState = {
 		.nextInChain = nullptr,
-		.module = module,
+		.module = module,  // module is a handle, passed as required
 		.entryPoint = "fs_main",
 		.constantCount = 0,
 		.constants = nullptr,
@@ -71,22 +72,22 @@ WGPURenderPipeline RdDriver::PipelineCreate(const RdSurface& p_rdSurface, const 
 		.targets = &colorTargetState,
 	};
 
-    WGPUDepthStencilState depthStencilState = {
+	WGPUDepthStencilState depthStencilState = {
         .nextInChain = nullptr,
-        .format = p_rdSurface.depthTextureFormat,
+        .format = rdSurface.depthTextureFormat,
         .depthWriteEnabled = true,
-        .depthCompare = WGPUCompareFunction_Less,
+        .depthCompare = wgpu::CompareFunction::Less,
         .stencilFront = {
-            .compare = WGPUCompareFunction_Always,
-            .failOp = WGPUStencilOperation_Keep,
-            .depthFailOp = WGPUStencilOperation_Keep,
-            .passOp = WGPUStencilOperation_Keep,
+            .compare = wgpu::CompareFunction::Always,
+            .failOp = wgpu::StencilOperation::Keep,
+            .depthFailOp = wgpu::StencilOperation::Keep,
+            .passOp = wgpu::StencilOperation::Keep,
         },
         .stencilBack = {
-            .compare = WGPUCompareFunction_Always,
-            .failOp = WGPUStencilOperation_Keep,
-            .depthFailOp = WGPUStencilOperation_Keep,
-            .passOp = WGPUStencilOperation_Keep,
+            .compare = wgpu::CompareFunction::Always,
+            .failOp = wgpu::StencilOperation::Keep,
+            .depthFailOp = wgpu::StencilOperation::Keep,
+            .passOp = wgpu::StencilOperation::Keep,
         },
         .stencilReadMask = 0x00,
         .stencilWriteMask = 0x00,
@@ -95,10 +96,10 @@ WGPURenderPipeline RdDriver::PipelineCreate(const RdSurface& p_rdSurface, const 
         .depthBiasClamp = 0.0f,
     };
 
-	WGPURenderPipelineDescriptor pipelineDesc = {
+	wgpu::RenderPipeline pipeline = device.createRenderPipeline(WGPURenderPipelineDescriptor {
         .nextInChain = nullptr,
         .label = "My Pipeline",
-        .layout = p_pipelineLayout,
+        .layout = pipelineLayout,
         .vertex = {
             .nextInChain = nullptr,
             .module = module,
@@ -110,10 +111,10 @@ WGPURenderPipeline RdDriver::PipelineCreate(const RdSurface& p_rdSurface, const 
         },
         .primitive = {
             .nextInChain = nullptr,
-            .topology = WGPUPrimitiveTopology_TriangleList,
-            .stripIndexFormat = WGPUIndexFormat_Undefined,
-            .frontFace = WGPUFrontFace_CCW,
-            .cullMode = WGPUCullMode_None,
+            .topology = wgpu::PrimitiveTopology::TriangleList,
+            .stripIndexFormat = wgpu::IndexFormat::Undefined,
+            .frontFace = wgpu::FrontFace::CCW,
+            .cullMode = wgpu::CullMode::None,
         },
         .depthStencil = &depthStencilState,
         .multisample = {
@@ -122,112 +123,121 @@ WGPURenderPipeline RdDriver::PipelineCreate(const RdSurface& p_rdSurface, const 
             .mask = ~0u,
             .alphaToCoverageEnabled = false,
         },
-        .fragment = &fragmentState,  
-    };
+        .fragment = &fragmentState,
+    });
 
 	LOG_INFO("Pipeline created");
-
-    return wgpuDeviceCreateRenderPipeline(device, &pipelineDesc);
+	return pipeline;
 }
 
-
-WGPUBindGroup RdDriver::BindGroupCreate(const WGPUBindGroupLayout& p_layout, const WGPUBuffer& p_buffer) {
+wgpu::BindGroup RdDriver::createBindGroup(const wgpu::BindGroupLayout& layout, wgpu::Buffer& buffer) {
+	ZoneScoped;
 	WGPUBindGroupEntry bindGroupEntry = {
 		.nextInChain = nullptr,
 		.binding = 0,
-		.buffer = p_buffer,
+		.buffer = buffer,
 		.offset = 0,
-		.size = 4 * sizeof(float),
+		.size = buffer.getSize(),
 		.sampler = nullptr,
 		.textureView = nullptr,
 	};
 
-	WGPUBindGroupDescriptor bindGroupDesc = {
-		.nextInChain = nullptr,
-		.label = "My Bind Group",
-		.layout = p_layout,
-		.entryCount = 1,
-		.entries = &bindGroupEntry,
-	};
+    wgpu::BindGroup bindGroup = device.createBindGroup(WGPUBindGroupDescriptor{
+        .nextInChain = nullptr,
+        .label = "My Bind Group",
+        .layout = layout,
+        .entryCount = 1,
+        .entries = &bindGroupEntry,
+    });
 
-    return wgpuDeviceCreateBindGroup(device, &bindGroupDesc);
+    return bindGroup;
 }
 
-WGPUBindGroupLayout RdDriver::BindGroupLayoutCreate() {
+wgpu::BindGroupLayout RdDriver::createBindGroupLayout() {
+	ZoneScoped;
 	WGPUBindGroupLayoutEntry bindGroupLayoutEntry = {
         .nextInChain = nullptr,
         .binding = 0,
-        .visibility = WGPUShaderStage_Vertex,
+        .visibility = wgpu::ShaderStage::Vertex,
         .buffer = {
             .nextInChain = nullptr,
-            .type = WGPUBufferBindingType_Uniform,
-
+            .type = wgpu::BufferBindingType::Uniform,
             .hasDynamicOffset = false,
             .minBindingSize = 4 * sizeof(float),
         },
         .sampler = {
             .nextInChain = nullptr,
-            .type = WGPUSamplerBindingType_Undefined,
+            .type = wgpu::SamplerBindingType::Undefined,
         },
         .texture = {
             .nextInChain = nullptr,
-            .sampleType = WGPUTextureSampleType_Undefined,
-            .viewDimension = WGPUTextureViewDimension_Undefined,
+            .sampleType = wgpu::TextureSampleType::Undefined,
+            .viewDimension = wgpu::TextureViewDimension::Undefined,
             .multisampled = false,
         },
         .storageTexture = {
             .nextInChain = nullptr,
-            .access = WGPUStorageTextureAccess_Undefined,
-            .format = WGPUTextureFormat_Undefined,
-            .viewDimension = WGPUTextureViewDimension_Undefined,
+            .access = wgpu::StorageTextureAccess::Undefined,
+            .format = wgpu::TextureFormat::Undefined,
+            .viewDimension = wgpu::TextureViewDimension::Undefined,
         },
     };
 
-	WGPUBindGroupLayoutDescriptor bindGroupLayoutDesc = {
-		.nextInChain = nullptr,
-		.label = "My Bind Group Layout",
-		.entryCount = 1,
-		.entries = &bindGroupLayoutEntry,
-	};
-
-    return wgpuDeviceCreateBindGroupLayout(device, &bindGroupLayoutDesc);
+    wgpu::BindGroupLayout bindGroupLayout = device.createBindGroupLayout(WGPUBindGroupLayoutDescriptor{
+        .nextInChain = nullptr,
+        .label = "My Bind Group Layout",
+        .entryCount = 1,
+        .entries = &bindGroupLayoutEntry,
+    });
+    
+    return bindGroupLayout;
 }
 
-WGPUShaderModule RdDriver::ShaderModuleLoad(const std::filesystem::path& filename) {
-    ZoneScoped;
-    std::ifstream file(std::string(RESOURCE_DIR) / filename, std::ios::binary);
-    if (!file) {
-        throw std::runtime_error("Failed to open shader: " + filename.string());
-    }
-    LOG_TRACE("Shader file opened: %s", filename.c_str());
-    std::ostringstream contents;
-    contents << file.rdbuf();
-    std::string source = contents.str();
+wgpu::ShaderModule RdDriver::loadShaderModule(const std::filesystem::path& filename) {
+	ZoneScoped;
+	std::ifstream file(std::string(RESOURCE_DIR) / filename, std::ios::binary);
+	if (!file) {
+		throw std::runtime_error("Failed to open shader: " + filename.string());
+	}
+	LOG_TRACE("Shader file opened: %s", filename.c_str());
+	file.seekg(0, std::ios::end);
+	size_t size = file.tellg();
+	std::string shaderSource(size, ' ');
+	file.seekg(0);
+	file.read(shaderSource.data(), size);
 
-    WGPUShaderModuleWGSLDescriptor shaderDesc = {
-        .chain = {
-            .next = nullptr,
-            .sType = WGPUSType_ShaderModuleWGSLDescriptor,
-        },
-        .code = source.c_str(),
-    };
+	/*	// for some reason this doesnt work*/
+	/*	WGPUShaderModuleWGSLDescriptor shaderDesc = {*/
+	/*	        .chain = {*/
+	/*		        .next = nullptr,*/
+	/*		        .sType = wgpu::SType::ShaderModuleWGSLDescriptor,*/
+	/*		    },*/
+	/*		    .code = shaderSource.c_str(),*/
+	/*		};*/
+	/*	return device.createShaderModule(WGPUShaderModuleDescriptor{*/
+	/*			.nextInChain = &shaderDesc.chain,*/
+	/*			.label = filename.c_str(),*/
+	/*#ifdef WEBGPU_BACKEND_WGPU*/
+	/*			.hintCount = 0,*/
+	/*			.hints = nullptr,*/
+	/*#endif*/
+	/*	});*/
 
-    WGPUShaderModuleDescriptor moduleDesc = {
-        .nextInChain = reinterpret_cast<WGPUChainedStruct*>(&shaderDesc),
-        .label = filename.c_str(),
+	wgpu::ShaderModuleWGSLDescriptor shaderCodeDesc{};
+	shaderCodeDesc.chain.next = nullptr;
+	shaderCodeDesc.chain.sType = wgpu::SType::ShaderModuleWGSLDescriptor;
+	shaderCodeDesc.code = shaderSource.c_str();
+
+	wgpu::ShaderModuleDescriptor shaderDesc{};
 #ifdef WEBGPU_BACKEND_WGPU
-        .hintCount = 0,
-        .hints = nullptr,
+	shaderDesc.hintCount = 0;
+	shaderDesc.hints = nullptr;
 #endif
-    };
-
-    WGPUShaderModule module = wgpuDeviceCreateShaderModule(device, &moduleDesc);
-    LOG_INFO("Shader module loaded: %s", filename.c_str());
-
-    return module;
+	shaderDesc.nextInChain = &shaderCodeDesc.chain;
+	return device.createShaderModule(shaderDesc);
 }
 
-bool RdDriver::GeometryLoad(
+bool RdDriver::loadGeometry(
 		const std::filesystem::path& path,
 		std::vector<Vertex>& vertices,
 		std::vector<uint16_t>& indices
@@ -241,20 +251,14 @@ bool RdDriver::GeometryLoad(
 	vertices.clear();
 	indices.clear();
 
-	enum class Section {
-		None,
-		Points,
-		Indices,
-	};
+	enum class Section { None, Points, Indices };
 	Section currentSection = Section::None;
 
 	float value;
 	uint16_t index;
 	std::string line;
-	while (!file.eof()) {
-		getline(file, line);
-
-		// overcome the `CRLF` problem
+	while (std::getline(file, line)) {
+		// Remove CR if present
 		if (!line.empty() && line.back() == '\r') {
 			line.pop_back();
 		}
@@ -263,67 +267,68 @@ bool RdDriver::GeometryLoad(
 			currentSection = Section::Points;
 		} else if (line == "[indices]") {
 			currentSection = Section::Indices;
-		} else if (line[0] == '#' || line.empty()) {
-			// Do nothing, this is a comment
+		} else if (line.empty() || line[0] == '#') {
+			continue;
 		} else if (currentSection == Section::Points) {
 			std::istringstream iss(line);
-			// Get x, y, z, r, g, b
-            Vertex vertex;
+			Vertex vertex;
 			for (int i = 0; i < 6; ++i) {
-                iss >> value;
-                if (i == 0) { vertex.position.x = value; }
-                if (i == 1) { vertex.position.y = value; }
-                if (i == 2) { vertex.position.z = value; }
-                if (i == 3) { vertex.color.r = value; }
-                if (i == 4) { vertex.color.g = value; }
-                if (i == 5) { vertex.color.b = value; }
+				iss >> value;
+				if (i == 0)
+					vertex.position.x = value;
+				else if (i == 1)
+					vertex.position.y = value;
+				else if (i == 2)
+					vertex.position.z = value;
+				else if (i == 3)
+					vertex.color.r = value;
+				else if (i == 4)
+					vertex.color.g = value;
+				else if (i == 5)
+					vertex.color.b = value;
 			}
-            vertices.push_back(vertex);
-
+			vertices.push_back(vertex);
 		} else if (currentSection == Section::Indices) {
 			std::istringstream iss(line);
-			// Get corners #0 #1 and #2
 			for (int i = 0; i < 3; ++i) {
 				iss >> index;
 				indices.push_back(index);
 			}
 		}
 	}
-    LOG_INFO("Geometry loaded: %s", path.c_str());
+	LOG_INFO("Geometry loaded: %s", path.c_str());
 	return true;
 }
 
-WGPUTextureView RdDriver::NextDepthView(const RdSurface& rdSurface) {
-    ZoneScoped;
+wgpu::TextureView RdDriver::nextDepthView(const RdSurface& rdSurface) {
+	ZoneScoped;
 
-    WGPUTextureDescriptor depthDescriptor = {
-        .nextInChain = nullptr,
-        .label = "Depth texture",
-        .usage = WGPUTextureUsage_RenderAttachment,
-        .dimension = WGPUTextureDimension_2D,
-        .size = {rdSurface.width, rdSurface.height, 1},
-        .format = rdSurface.depthTextureFormat,
-        .mipLevelCount = 1,
-        .sampleCount = 1,
-        .viewFormatCount = 1,
-        .viewFormats = &rdSurface.depthTextureFormat,
-    };
-    WGPUTexture depthTexture = wgpuDeviceCreateTexture(device, &depthDescriptor);
+	wgpu::Texture depthTexture = device.createTexture(WGPUTextureDescriptor{
+			.nextInChain = nullptr,
+			.label = "Depth Texture",
+			.usage = wgpu::TextureUsage::RenderAttachment,
+			.dimension = wgpu::TextureDimension::_2D,
+			.size = { rdSurface.width, rdSurface.height, 1 },
+			.format = rdSurface.depthTextureFormat,
+			.mipLevelCount = 1,
+			.sampleCount = 1,
+			.viewFormatCount = 1,
+			.viewFormats = (WGPUTextureFormat*)&rdSurface.depthTextureFormat,
+	});
 
-    WGPUTextureViewDescriptor viewDescriptor = {
-        .nextInChain = nullptr,
-        .label = "Depth texture view",
-        .format = rdSurface.depthTextureFormat,
-        .dimension = WGPUTextureViewDimension_2D,
-        .baseMipLevel = 0,
-        .mipLevelCount = 1,
-        .baseArrayLayer = 0,
-        .arrayLayerCount = 1,
-        .aspect = WGPUTextureAspect_DepthOnly,
-    };
-    WGPUTextureView depthView = wgpuTextureCreateView(depthTexture, &viewDescriptor);
+	wgpu::TextureView depthView = depthTexture.createView(WGPUTextureViewDescriptor{
+			.nextInChain = nullptr,
+			.label = "Depth texture view",
+			.format = rdSurface.depthTextureFormat,
+			.dimension = wgpu::TextureViewDimension::_2D,
+			.baseMipLevel = 0,
+			.mipLevelCount = 1,
+			.baseArrayLayer = 0,
+			.arrayLayerCount = 1,
+			.aspect = wgpu::TextureAspect::DepthOnly,
+	});
 
-	wgpuTextureRelease(depthTexture);
+	depthTexture.release();
 
-    return depthView;
+	return depthView;
 }

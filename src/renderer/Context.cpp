@@ -1,87 +1,51 @@
 #include "Context.hpp"
 
 #include "logging_macros.h"
-
-#include <webgpu/webgpu.h>
-
-#ifdef WEBGPU_BACKEND_WGPU
-#include <webgpu/wgpu.h>   
-#endif  // WEBGPU_BACKEND_WGPU
-
-#include <utility>
-
-
-#ifdef __EMSCRIPTEN__
-#include <emscripten.h>
-#endif	// __EMSCRIPTEN__
-
 #include "tracy/Tracy.hpp"
 
+#define WEBGPU_CPP_IMPLEMENTATION
+#include <webgpu/webgpu.hpp>
 
-static void onAdapterRequestEnded(
-		WGPURequestAdapterStatus status,
-		WGPUAdapter p_adapter,
-		const char* message,
-		void* userdata
-) {
-    ZoneScoped;
-    RdContext& context = *reinterpret_cast<RdContext*>(userdata);
-	if (status == WGPURequestAdapterStatus_Success || status == 1) {
-        context.adapter = p_adapter;
-		LOG_TRACE("  ~  got WebGPU adapter! %p", (void*)p_adapter);
-        ERR(context.adapter == nullptr, "Adapter is null when requested ended and status is success. Browser is not supported");
-	} else {
-		ERR(true, "WebGPU could not get adapter: %s", message);
-	}
-}
-
-void onDeviceRequestEnded(
-		WGPURequestDeviceStatus status,
-		WGPUDevice device,
-		const char* message,
-		void* userdata
-) {
-    ZoneScoped;
-    RdDriver& driver = *reinterpret_cast<RdDriver*>(userdata);
-	if (status == WGPURequestDeviceStatus_Success || status == 1) {
-        driver.device = device;
-		LOG_TRACE("  ~  got WebGPU device!");
-	} else {
-		ERR(true, "WebGPU could not get device: %s", message);
-	}
-}
-
-// @brief Initialize the renderer context, driver is passed by pointer to initialize
-void RdContext::Initialize(WGPUInstance p_instance, RdSurface p_rdSurface, RdDriver* p_driver) {
-    ZoneScoped;
+void RdContext::initialize(wgpu::Instance p_instance, RdSurface p_rdSurface, RdDriver* p_driver) {
+	ZoneScoped;
 	instance = p_instance;
 
-    ERR(p_rdSurface.surface == nullptr, "Surface is null when initializing renderer context");
+	ERR(p_rdSurface.surface == nullptr, "Surface is null when initializing renderer context");
 	rdSurface = std::move(p_rdSurface);
 
-	// ~~~~~~~~~ ADAPTER ~~~~~~~~~~
+	// --- Request Adapter ---
 	WGPURequestAdapterOptions options = {
 		.nextInChain = nullptr,
 		.compatibleSurface = rdSurface.surface,
-		.powerPreference = WGPUPowerPreference_Undefined,
-		.backendType = WGPUBackendType_Undefined,
+		.powerPreference = wgpu::PowerPreference::HighPerformance,
+		.backendType = wgpu::BackendType::Undefined,
 		.forceFallbackAdapter = false,
 	};
 
 	adapter = nullptr;
 	LOG_TRACE("WEBGPU adapter requested");
-	wgpuInstanceRequestAdapter(instance, &options, onAdapterRequestEnded, this);
+	{
+		auto callback = instance.requestAdapter(
+				options,
+				[this](wgpu::RequestAdapterStatus status, wgpu::Adapter p_adapter, const char* message) {
+					if (status == wgpu::RequestAdapterStatus::Success) {
+						this->adapter = p_adapter;
+						LOG_TRACE(" ~ Adapter received");
+					} else {
+						ERR(true, "Could not get WebGPU adapter: %s", message);
+					}
+				}
+		);
 
 #ifdef __EMSCRIPTEN__
-	while (adapter == nullptr) {
-		emscripten_sleep(100);
+		while (adapter == nullptr) {
+			emscripten_sleep(100);
+		}
+#endif
 	}
-#endif	// __EMSCRIPTEN__
+	ERR(adapter == nullptr, "Adapter is null when request ended, probably browser is not supported");
 
-	ERR(adapter == nullptr,
-		"Adapter is null when requested ended, probably browser is not supported");
-
-	// ~~~~~~~~~ DEVICE ~~~~~~~~~~
+	// --- Request Device ---
 	WGPUDeviceDescriptor deviceDesc = {
         .nextInChain = nullptr,
         .label = "My Device",
@@ -96,132 +60,133 @@ void RdContext::Initialize(WGPUInstance p_instance, RdSurface p_rdSurface, RdDri
         .deviceLostUserdata = nullptr,
 #ifdef WEBGPU_BACKEND_WGPU
         .uncapturedErrorCallbackInfo = {},
-#endif  // WEBGPU_BACKEND_WGPU
+#endif	// WEBGPU_BACKEND_WGPU
     };
 
 #ifndef __EMSCRIPTEN__
-        deviceDesc.uncapturedErrorCallbackInfo = {};
-#endif	// __EMSCRIPTEN__
+	deviceDesc.uncapturedErrorCallbackInfo = {};
+#endif
 
 	LOG_TRACE("WEBGPU device requested");
-	wgpuAdapterRequestDevice(adapter, &deviceDesc, onDeviceRequestEnded, p_driver);
+	{
+		auto callback = adapter.requestDevice(
+				deviceDesc,
+				[p_driver](wgpu::RequestDeviceStatus status, wgpu::Device p_device, const char* message) {
+					if (status == wgpu::RequestDeviceStatus::Success) {
+						p_driver->device = p_device;
+						LOG_TRACE(" ~ Device received");
+					} else {
+						ERR(true, "Could not get WebGPU device: %s", message);
+					}
+				}
+		);
 
 #ifdef __EMSCRIPTEN__
-	LOG_TRACE("Waiting for device to be ready in Emscripten");
-	while (p_driver->device == nullptr) {
-		emscripten_sleep(100);
+		while (p_driver->device == nullptr) {
+			emscripten_sleep(100);
+		}
+#endif
 	}
-#endif	// __EMSCRIPTEN__
+	ERR(p_driver->device == nullptr, "Device is null when request ended, probably browser is not supported");
 
-	ERR(p_driver->device == nullptr,
-		"Device is null when requested ended, probably browser is not supported");
-
-	// ~~~~~~~~~ QUEUE ~~~~~~~~~~
-	p_driver->queue = wgpuDeviceGetQueue(p_driver->device);
+	// --- Retrieve Queue ---
+	p_driver->queue = p_driver->device.getQueue();
 	LOG_TRACE("WebGPU queue created");
 
 	LOG_INFO("Renderer context initialized");
 }
 
-
 RdContext::RdContext() {
-    ZoneScoped;
+	ZoneScoped;
 	instance = nullptr;
 	adapter = nullptr;
-    yieldToBrowser = false;
+	yieldToBrowser = false;
 }
 
 RdContext::~RdContext() {
-    ZoneScoped;
+	ZoneScoped;
 	if (instance) {
-		wgpuInstanceRelease(instance);
-        LOG_TRACE("Instance released");
+		instance.release();
+		LOG_TRACE("Instance released");
 	} else {
 		LOG_WARN("Instance is null when destroying renderer context");
 	}
-    // Window releases surface
-	// if (rdSurface.surface) {
-	//     wgpuSurfaceRelease(rdSurface.surface);
-	// } else {
-	//     LOG_WARN("Surface is null when destroying renderer context");
-	// }
+	// Surface is expected to be released by the window
 	if (adapter) {
-		wgpuAdapterRelease(adapter);
-        LOG_TRACE("Adapter released");
+		adapter.release();
+		LOG_TRACE("Adapter released");
 	} else {
 		LOG_WARN("Adapter is null when destroying renderer context");
 	}
 	LOG_INFO("Renderer context destroyed");
 }
 
-void RdContext::ConfigureSurface(const int& width, const int& height, const WGPUDevice& p_device) {
-    ZoneScoped;
+void RdContext::configureSurface(const int& width, const int& height, const WGPUDevice& p_device) {
+	ZoneScoped;
 	ERR(adapter == nullptr, "Adapter is null, possibly context is not initialized");
 
-	WGPUSurfaceCapabilities capabilities = {};
-	wgpuSurfaceGetCapabilities(rdSurface.surface, adapter, &capabilities);
+	wgpu::SurfaceCapabilities capabilities = {};
+	rdSurface.surface.getCapabilities(adapter, &capabilities);
+
 	WGPUSurfaceConfiguration config = {
 		.nextInChain = nullptr,
 		.device = p_device,
 		.format = rdSurface.format = capabilities.formats[0],
-		.usage = WGPUTextureUsage_RenderAttachment,
+		.usage = wgpu::TextureUsage::RenderAttachment,
 		.viewFormatCount = 0,
 		.viewFormats = nullptr,
-		.alphaMode = WGPUCompositeAlphaMode_Auto,
+		.alphaMode = wgpu::CompositeAlphaMode::Opaque,
 		.width = rdSurface.width = static_cast<uint32_t>(width),
 		.height = rdSurface.height = static_cast<uint32_t>(height),
-		.presentMode = WGPUPresentMode_Fifo,
+		.presentMode = wgpu::PresentMode::Fifo,
 	};
 
-    rdSurface.depthTextureFormat = WGPUTextureFormat_Depth24Plus;
-
-	wgpuSurfaceConfigure(rdSurface.surface, &config);
+	rdSurface.depthTextureFormat = wgpu::TextureFormat::Depth24Plus;
+	rdSurface.surface.configure(config);
 	LOG_TRACE("Surface configured");
 }
 
-WGPUTextureView RdContext::NextTextureView() {
-    ZoneScoped;
-	WGPUSurfaceTexture surfaceTexture = {};
-	wgpuSurfaceGetCurrentTexture(rdSurface.surface, &surfaceTexture);
+WGPUTextureView RdContext::nextTextureView() {
+	ZoneScoped;
+	wgpu::SurfaceTexture surfaceTexture = {};
+	rdSurface.surface.getCurrentTexture(&surfaceTexture);
 
-	if (surfaceTexture.status != WGPUSurfaceGetCurrentTextureStatus_Success) {
+	if (surfaceTexture.status != wgpu::SurfaceGetCurrentTextureStatus::Success) {
 		return nullptr;
 	}
 
-	WGPUTextureViewDescriptor viewDescriptor = {
-		.nextInChain = nullptr,
-		.label = "Surface texture view",
-		.format = wgpuTextureGetFormat(surfaceTexture.texture),
-		.dimension = WGPUTextureViewDimension_2D,
-		.baseMipLevel = 0,
-		.mipLevelCount = 1,
-		.baseArrayLayer = 0,
-		.arrayLayerCount = 1,
-		.aspect = WGPUTextureAspect_All,
-	};
-
-    rdSurface.depthTextureFormat = WGPUTextureFormat_Depth24Plus;
-
-	WGPUTextureView targetView = wgpuTextureCreateView(surfaceTexture.texture, &viewDescriptor);
+	wgpu::Texture tx = surfaceTexture.texture;
+	wgpu::TextureView targetView = tx.createView(WGPUTextureViewDescriptor{
+			.nextInChain = nullptr,
+			.label = "Surface texture view",
+			.format = rdSurface.format,
+			.dimension = wgpu::TextureViewDimension::_2D,
+			.baseMipLevel = 0,
+			.mipLevelCount = 1,
+			.baseArrayLayer = 0,
+			.arrayLayerCount = 1,
+			.aspect = wgpu::TextureAspect::All,
+	});
 
 #ifndef WEBGPU_BACKEND_WGPU
-	wgpuTextureRelease(surfaceTexture.texture);
+	surfaceTexture.texture.release();
 #endif
 
 	return targetView;
 }
 
-
-void RdContext::Polltick(const WGPUDevice& p_device) {
-    (void)p_device;
-    ZoneScoped;
-    #if defined(WEBGPU_BACKEND_DAWN)
-    wgpuDeviceTick(p_device);
+void RdContext::polltick(const wgpu::Device& p_device) {
+	ZoneScoped;
+#if defined(WEBGPU_BACKEND_DAWN)
+	p_device.tick();
 #elif defined(WEBGPU_BACKEND_WGPU)
-    wgpuDevicePoll(p_device, false, nullptr);
+    // for some reason this doesnt work
+    // p_device.poll(false);
+
+	wgpuDevicePoll(p_device, false, nullptr); 
 #elif defined(WEBGPU_BACKEND_EMSCRIPTEN)
-    if (yieldToBrowser) {
-        emscripten_sleep(100);
-    }
+	if (yieldToBrowser) {
+		emscripten_sleep(100);
+	}
 #endif
 }

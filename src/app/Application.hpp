@@ -4,7 +4,6 @@
 
 #include "../renderer/Context.hpp"
 #include "../renderer/Vertex.hpp"
-#include "webgpu/webgpu.h"
 
 #include <GLFW/glfw3.h>
 
@@ -18,18 +17,18 @@ public:
 		int height;
 	};
 
-	bool Initialize();
-	bool InitGui();
-	void Terminate();
-	void TerminateGui();
-	void MainLoop();
-	void UpdateGui();
+	bool initialize();
+	bool initGui();
+	void terminate();
+	void terminateGui();
+	void mainLoop();
+	void updateGui();
 	void onResize(const int& width, const int& height);
 	bool isRunning();
-	void InitPipeline();
-	void InitBuffers();
+	void initPipeline();
+	void initBuffers();
 
-	Window CreateWindow(int width, int height, const char* title);
+	Window createWindow(int width, int height, const char* title);
 
 	Application();
 	~Application();
@@ -38,13 +37,13 @@ private:
 	Window m_window;
 	RdContext m_context;
 	RdDriver m_driver;
-	WGPURenderPipeline m_pipeline;
-	WGPUBuffer m_vertexBuffer;
-	WGPUBuffer m_indexBuffer;
-	WGPUBuffer m_uniformBuffer;
-	WGPUPipelineLayout m_pipelineLayout;
-	WGPUBindGroupLayout m_bindGroupLayout;
-	WGPUBindGroup m_bindGroup;
+    wgpu::RenderPipeline m_pipeline;
+    wgpu::Buffer m_vertexBuffer;
+    wgpu::Buffer m_indexBuffer;
+    wgpu::Buffer m_uniformBuffer;
+    wgpu::PipelineLayout m_pipelineLayout;
+    wgpu::BindGroupLayout m_bindGroupLayout;
+    wgpu::BindGroup m_bindGroup;
 	std::vector<Vertex> m_vertexData;
 	std::vector<uint16_t> m_indexData;
 	uint32_t m_indexCount;
