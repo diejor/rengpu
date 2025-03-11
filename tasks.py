@@ -4,6 +4,7 @@ done via:
     pipx install invoke
 """
 
+import os
 from pathlib import Path
 from shutil import rmtree as shutil_rmtree
 from invoke import task
@@ -49,7 +50,7 @@ def config(c, preset="default"):
     build_path.mkdir(parents=True, exist_ok=True)
     cmd = f"cmake --preset {preset}"
     print(f"Running: {cmd}")
-    c.run(cmd, pty=True)
+    c.run(cmd)
 
     # Symlink compile_commands.json if it exists in the build directory
     src_ccdb_file = SRC_PATH / "compile_commands.json"
@@ -63,7 +64,7 @@ def build(c, preset="default"):
     """Build the project using CMakePresets."""
     cmd = f"cmake --build --preset {preset}"
     print(f"Running: {cmd}")
-    c.run(cmd, pty=True)
+    c.run(cmd)
 
 @task
 def install(c, preset="default"):
@@ -76,7 +77,7 @@ def install(c, preset="default"):
     build_path = get_build_path(preset)
     cmd = f"cmake --install {build_path}"
     print(f"Running: {cmd}")
-    c.run(cmd, pty=True)
+    c.run(cmd)
 
 @task
 def run(c, preset="default"):
@@ -85,20 +86,22 @@ def run(c, preset="default"):
     
     This task will configure, build, and install using the specified preset.
     The installed binary is expected to be at:
-        <install_path>/bin/app
+        <install_path>/bin/app (or app.exe on Windows)
     """
     config(c, preset=preset)
     build(c, preset=preset)
     install(c, preset=preset)
 
     install_dir = get_install_path()
-    binary_path = install_dir / "bin/app"
+    # On Windows, the binary has a .exe extension
+    binary_name = "app.exe" if os.name == "nt" else "app"
+    binary_path = install_dir / "bin" / binary_name
     if not binary_path.exists():
         print("Error: installed binary not found. Check your build configuration.")
         return
 
     print(f"{PROJECT}: running binary at {binary_path}")
-    c.run(str(binary_path), pty=True)
+    c.run(str(binary_path))
 
 @task
 def clean(c):
@@ -138,7 +141,7 @@ def config_web(c, preset="emscripten"):
     # Here we assume you use emcmake to set up the environment for Emscripten.
     cmd = f"emcmake cmake --preset {preset}"
     print(f"Running: {cmd}")
-    c.run(cmd, pty=True)
+    c.run(cmd)
     
     # Link compile_commands.json for the web build as well.
     web_build_path = get_build_path(preset)
@@ -153,7 +156,7 @@ def build_web(c, preset="emscripten"):
     """Build the project for the Web (WASM) via CMakePresets."""
     cmd = f"cmake --build --preset {preset}"
     print(f"Running: {cmd}")
-    c.run(cmd, pty=True)
+    c.run(cmd)
 
 @task
 def run_web(c, preset="emscripten"):
@@ -172,6 +175,6 @@ def run_web(c, preset="emscripten"):
         return
 
     print(f"Starting local server in: {html_file.parent}")
-    print("Open your browser at http://localhost:8000/")
-    c.run(f"python -m http.server -d {html_file.parent}", pty=True)
+    print("Open your browser at http://localhost:8001/")
+    c.run(f"python -m http.server -d {html_file.parent}")
 
