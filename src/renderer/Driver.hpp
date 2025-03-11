@@ -8,10 +8,10 @@
 #include <webgpu/webgpu.hpp>
 
 struct RdDriver {
-    wgpu::RenderPipeline createPipeline(const RdSurface& p_rdSurface, const wgpu::PipelineLayout& p_pipelineLayout);
+    wgpu::RenderPipeline createPipeline(RdSurface& p_rdSurface, const wgpu::PipelineLayout& p_pipelineLayout);
     wgpu::BindGroupLayout createBindGroupLayout();
     wgpu::BindGroup createBindGroup(const wgpu::BindGroupLayout& p_layout, wgpu::Buffer& p_buffer);
-    wgpu::TextureView nextDepthView(const RdSurface& rdSurface);
+    wgpu::TextureView nextDepthView(RdSurface& rdSurface);
     wgpu::ShaderModule loadShaderModule(const std::filesystem::path& filename);
 	bool loadGeometry(
 			const std::filesystem::path& filename,

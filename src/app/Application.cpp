@@ -5,8 +5,10 @@
 #include "glfw3webgpu.h"
 #include "logging_macros.h"
 #include "tracy/Tracy.hpp"
+#include <webgpu/webgpu.h>
 
 #include <vector>
+#include <webgpu/webgpu.hpp>
 
 // Callback for GLFW framebuffer resize
 void onWindowResize(GLFWwindow* window, int width, int height) {
@@ -45,8 +47,7 @@ bool Application::initialize() {
 	m_window = createWindow(width, height, "WebGPU");
 
 	// Create a WebGPU instance using the C++ wrapper.
-	wgpu::InstanceDescriptor instanceDesc = {};
-	wgpu::Instance instance = wgpu::createInstance(instanceDesc);
+	wgpu::Instance instance = wgpuCreateInstance(nullptr);
 	LOG_TRACE("WebGPU instance created");
 
 	// Create the surface using GLFW helper (assume the wrapper offers a compatible conversion)
@@ -122,8 +123,8 @@ void Application::mainLoop() {
 		.view = textureView,
 		.depthSlice = 0,
 		.resolveTarget = nullptr,
-		.loadOp = WGPULoadOp_Clear,
-		.storeOp = WGPUStoreOp_Store,
+		.loadOp = wgpu::LoadOp::Clear,
+		.storeOp = wgpu::StoreOp::Store,
 		.clearValue = { 0.1f, 0.1f, 0.1f, 1.0f },
 	};
 
@@ -133,19 +134,19 @@ void Application::mainLoop() {
 
 	WGPURenderPassDepthStencilAttachment depthStencilAttachment = {
 		.view = depthStencilView,
-		.depthLoadOp = WGPULoadOp_Clear,
-		.depthStoreOp = WGPUStoreOp_Store,
+		.depthLoadOp = wgpu::LoadOp::Clear,
+		.depthStoreOp = wgpu::StoreOp::Store,
 		.depthClearValue = 1.0f,
 		.depthReadOnly = false,
-		.stencilLoadOp = WGPULoadOp_Clear,
-		.stencilStoreOp = WGPUStoreOp_Store,
+		.stencilLoadOp = wgpu::LoadOp::Clear,
+		.stencilStoreOp = wgpu::StoreOp::Store,
 		.stencilClearValue = 0,
 		.stencilReadOnly = true,
 	};
 
 #ifndef WEBGPU_BACKEND_WGPU
-	depthStencilAttachment.stencilLoadOp = WGPULoadOp_Undefined;
-	depthStencilAttachment.stencilStoreOp = WGPUStoreOp_Undefined;
+	depthStencilAttachment.stencilLoadOp = wgpu::LoadOp::Undefined;
+	depthStencilAttachment.stencilStoreOp = wgpu::StoreOp::Undefined;
 #endif
 
 	{
@@ -162,7 +163,7 @@ void Application::mainLoop() {
 
 		renderPass.setPipeline(m_pipeline);
 		renderPass.setVertexBuffer(0, m_vertexBuffer, 0, m_vertexBuffer.getSize());
-		renderPass.setIndexBuffer(m_indexBuffer, WGPUIndexFormat_Uint16, 0, m_indexBuffer.getSize());
+		renderPass.setIndexBuffer(m_indexBuffer, wgpu::IndexFormat::Uint16, 0, m_indexBuffer.getSize());
 		renderPass.setBindGroup(0, m_bindGroup, 0, nullptr);
 		renderPass.drawIndexed(m_indexCount, 1, 0, 0, 0);
 
@@ -262,7 +263,7 @@ void Application::initBuffers() {
 	m_vertexBuffer = m_driver.device.createBuffer(WGPUBufferDescriptor{
 			.nextInChain = nullptr,
 			.label = "My Vertex Buffer",
-			.usage = WGPUBufferUsage_Vertex | WGPUBufferUsage_CopyDst,
+			.usage = wgpu::BufferUsage::Vertex | wgpu::BufferUsage::CopyDst,
 			.size = align(m_vertexData.size() * sizeof(Vertex), 4),
 			.mappedAtCreation = false,
 	});
@@ -270,7 +271,7 @@ void Application::initBuffers() {
 	m_indexBuffer = m_driver.device.createBuffer(WGPUBufferDescriptor{
 			.nextInChain = nullptr,
 			.label = "My Index Buffer",
-			.usage = WGPUBufferUsage_Index | WGPUBufferUsage_CopyDst,
+			.usage = wgpu::BufferUsage::Index | wgpu::BufferUsage::CopyDst,
 			.size = align(m_indexData.size() * sizeof(uint16_t), 4),
 			.mappedAtCreation = false,
 	});
@@ -278,7 +279,7 @@ void Application::initBuffers() {
 	m_uniformBuffer = m_driver.device.createBuffer(WGPUBufferDescriptor{
 			.nextInChain = nullptr,
 			.label = "My Uniform Buffer",
-			.usage = WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst,
+			.usage = wgpu::BufferUsage::Uniform | wgpu::BufferUsage::CopyDst,
 			.size = align(sizeof(float), 16),
 			.mappedAtCreation = false,
 	});

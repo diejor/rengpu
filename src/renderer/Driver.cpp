@@ -15,7 +15,7 @@
 #include <tracy/Tracy.hpp>
 #include <webgpu/webgpu.hpp>
 
-wgpu::RenderPipeline RdDriver::createPipeline(const RdSurface& rdSurface, const wgpu::PipelineLayout& pipelineLayout) {
+wgpu::RenderPipeline RdDriver::createPipeline(RdSurface& rdSurface, const wgpu::PipelineLayout& pipelineLayout) {
 	ZoneScoped;
 	// Load shader module using wrapper method.
 	wgpu::ShaderModule module = loadShaderModule("triangles.wgsl");
@@ -300,7 +300,7 @@ bool RdDriver::loadGeometry(
 	return true;
 }
 
-wgpu::TextureView RdDriver::nextDepthView(const RdSurface& rdSurface) {
+wgpu::TextureView RdDriver::nextDepthView(RdSurface& rdSurface) {
 	ZoneScoped;
 
 	wgpu::Texture depthTexture = device.createTexture(WGPUTextureDescriptor{

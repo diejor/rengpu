@@ -169,13 +169,14 @@ WGPUTextureView RdContext::nextTextureView() {
 	});
 
 #ifndef WEBGPU_BACKEND_WGPU
-	surfaceTexture.texture.release();
+    tx.release();
 #endif
 
 	return targetView;
 }
 
 void RdContext::polltick(const wgpu::Device& p_device) {
+    (void)p_device;
 	ZoneScoped;
 #if defined(WEBGPU_BACKEND_DAWN)
 	p_device.tick();
