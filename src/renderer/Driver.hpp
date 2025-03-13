@@ -1,17 +1,19 @@
 #pragma once
 
-#include "Surface.hpp"
+#include <webgpu/webgpu-raii.hpp>
+#include <webgpu/webgpu.hpp>
+
 #include "Vertex.hpp"
+#include "Context.hpp"
 #include <filesystem>
 #include <vector>
 
-#include <webgpu/webgpu.hpp>
 
 struct RdDriver {
-    wgpu::RenderPipeline createPipeline(RdSurface& p_rdSurface, const wgpu::PipelineLayout& p_pipelineLayout);
+    wgpu::RenderPipeline createPipeline(RdContext::Surface& p_rdSurface, const wgpu::PipelineLayout& p_pipelineLayout);
     wgpu::BindGroupLayout createBindGroupLayout();
     wgpu::BindGroup createBindGroup(const wgpu::BindGroupLayout& p_layout, wgpu::Buffer& p_buffer);
-    wgpu::TextureView nextDepthView(RdSurface& rdSurface);
+    wgpu::TextureView nextDepthView(RdContext::Surface& rdSurface);
     wgpu::ShaderModule loadShaderModule(const std::filesystem::path& filename);
 	bool loadGeometry(
 			const std::filesystem::path& filename,
@@ -19,7 +21,7 @@ struct RdDriver {
 			std::vector<uint16_t>& indices
 	);
 
-    wgpu::Device device;
-    wgpu::Queue queue;
+    wgpu::raii::Device device;
+    wgpu::raii::Queue queue;
 };
 

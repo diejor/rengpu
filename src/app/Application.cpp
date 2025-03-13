@@ -5,9 +5,9 @@
 #include "glfw3webgpu.h"
 #include "logging_macros.h"
 #include "tracy/Tracy.hpp"
-#include <webgpu/webgpu.h>
 
 #include <vector>
+#include <webgpu/webgpu-raii.hpp>
 #include <webgpu/webgpu.hpp>
 
 // Callback for GLFW framebuffer resize
@@ -46,20 +46,29 @@ bool Application::initialize() {
 	int height = 600;
 	m_window = createWindow(width, height, "WebGPU");
 
-	// Create a WebGPU instance using the C++ wrapper.
 	wgpu::Instance instance = wgpuCreateInstance(nullptr);
 	LOG_TRACE("WebGPU instance created");
 
-	// Create the surface using GLFW helper (assume the wrapper offers a compatible conversion)
-	RdSurface rdSurface(glfwCreateWindowWGPUSurface(instance, m_window.handle));
-
-	m_driver = {
-		.device = nullptr,
-		.queue = nullptr,
+	wgpu::raii::Surface handle(glfwCreateWindowWGPUSurface(instance, m_window.handle));
+	RdContext::Surface surface = {
+		.handle = handle,
+		.format = wgpu::TextureFormat::Undefined,  // configuration is deferred
+		.depthTextureFormat = wgpu::TextureFormat::Undefined,
+		.width = static_cast<uint32_t>(width),
+		.height = static_cast<uint32_t>(height),
 	};
 
-	m_context.initialize(instance, std::move(rdSurface), &m_driver);
-	m_context.configureSurface(width, height, m_driver.device);
+	wgpu::Device device = nullptr;
+	wgpu::Queue queue = nullptr;
+	m_context.initialize(instance, std::move(surface), &device, &queue);
+    wgpu::raii::Device h_device(device);
+    wgpu::raii::Queue h_queue(queue);
+
+	m_driver = { 
+        .device = wgpu::raii::Device(device), 
+        .queue = wgpu::raii::Queue(queue) };
+
+	m_context.configureSurface(width, height, *m_driver.device);
 
 	initBuffers();
 	initPipeline();
@@ -85,8 +94,8 @@ bool Application::initGui() {
 	ImGui_ImplWGPU_InitInfo initInfo = {};
 	initInfo.Device = m_driver.device;
 	initInfo.NumFramesInFlight = 3;
-	initInfo.RenderTargetFormat = m_context.rdSurface.format;
-	initInfo.DepthStencilFormat = m_context.rdSurface.depthTextureFormat;
+	initInfo.RenderTargetFormat = m_context.surface.format;
+	initInfo.DepthStencilFormat = m_context.surface.depthTextureFormat;
 
 	ImGui_ImplWGPU_Init(&initInfo);
 
@@ -102,15 +111,15 @@ void Application::mainLoop() {
 
 	{
 		ZoneScopedN("Update Buffers");
-		m_driver.queue.writeBuffer(m_vertexBuffer, 0, m_vertexData.data(), m_vertexData.size() * sizeof(Vertex));
+		m_driver.queue.writeBuffer(*m_vertexBuffer, 0, m_vertexData.data(), m_vertexData.size() * sizeof(Vertex));
 		float currentTime = static_cast<float>(glfwGetTime());
-		m_driver.queue.writeBuffer(m_uniformBuffer, 0, &currentTime, sizeof(float));
+		m_driver.queue.writeBuffer(*m_uniformBuffer, 0, &currentTime, sizeof(float));
 	}
 
 	wgpu::TextureView textureView = m_context.nextTextureView();
 	if (!textureView) return;
 
-	wgpu::TextureView depthStencilView = m_driver.nextDepthView(m_context.rdSurface);
+	wgpu::TextureView depthStencilView = m_driver.nextDepthView(m_context.surface);
 	if (!depthStencilView) return;
 
 	wgpu::CommandEncoder encoder = m_driver.device.createCommandEncoder(WGPUCommandEncoderDescriptor{
@@ -161,10 +170,10 @@ void Application::mainLoop() {
 				.timestampWrites = nullptr,
 		});
 
-		renderPass.setPipeline(m_pipeline);
-		renderPass.setVertexBuffer(0, m_vertexBuffer, 0, m_vertexBuffer.getSize());
-		renderPass.setIndexBuffer(m_indexBuffer, wgpu::IndexFormat::Uint16, 0, m_indexBuffer.getSize());
-		renderPass.setBindGroup(0, m_bindGroup, 0, nullptr);
+		renderPass.setPipeline(*m_pipeline);
+		renderPass.setVertexBuffer(0, *m_vertexBuffer, 0, m_vertexBuffer->getSize());
+		renderPass.setIndexBuffer(*m_indexBuffer, wgpu::IndexFormat::Uint16, 0, m_indexBuffer->getSize());
+		renderPass.setBindGroup(0, *m_bindGroup, 0, nullptr);
 		renderPass.drawIndexed(m_indexCount, 1, 0, 0, 0);
 
 		// Check framebuffer size before rendering ImGui
@@ -193,7 +202,7 @@ void Application::mainLoop() {
 	textureView.release();
 	depthStencilView.release();
 #ifndef __EMSCRIPTEN__
-	m_context.rdSurface.surface.present();
+	m_context.surface.handle->present();
 #endif
 
 	m_context.polltick(m_driver.device);
@@ -211,7 +220,7 @@ void Application::initPipeline() {
 	ZoneScoped;
 
 	m_bindGroupLayout = m_driver.createBindGroupLayout();
-	m_bindGroup = m_driver.createBindGroup(m_bindGroupLayout, m_uniformBuffer);
+	m_bindGroup = m_driver.createBindGroup(*m_bindGroupLayout, *m_uniformBuffer);
 
 	m_pipelineLayout = m_driver.device.createPipelineLayout(WGPUPipelineLayoutDescriptor{
 			.nextInChain = nullptr,
@@ -220,7 +229,7 @@ void Application::initPipeline() {
 			.bindGroupLayouts = (WGPUBindGroupLayout*)&m_bindGroupLayout,
 	});
 
-	m_pipeline = m_driver.createPipeline(m_context.rdSurface, m_pipelineLayout);
+	m_pipeline = m_driver.createPipeline(m_context.surface, *m_pipelineLayout);
 
 	LOG_INFO("Pipeline initialized");
 }
@@ -248,7 +257,7 @@ void Application::updateGui() {
 }
 
 uint32_t align(uint32_t offset, uint32_t align) {
-    return (offset + align - 1) & ~(align - 1);
+	return (offset + align - 1) & ~(align - 1);
 }
 
 void Application::initBuffers() {
@@ -284,11 +293,11 @@ void Application::initBuffers() {
 			.mappedAtCreation = false,
 	});
 
-	m_driver.queue.writeBuffer(m_vertexBuffer, 0, m_vertexData.data(), m_vertexBuffer.getSize());
-	m_driver.queue.writeBuffer(m_indexBuffer, 0, m_indexData.data(), m_indexBuffer.getSize());
+	m_driver.queue.writeBuffer(*m_vertexBuffer, 0, m_vertexData.data(), m_vertexBuffer->getSize());
+	m_driver.queue.writeBuffer(*m_indexBuffer, 0, m_indexData.data(), m_indexBuffer->getSize());
 
 	float currentTime = 1.0f;
-	m_driver.queue.writeBuffer(m_uniformBuffer, 0, &currentTime, m_uniformBuffer.getSize());
+	m_driver.queue.writeBuffer(*m_uniformBuffer, 0, &currentTime, m_uniformBuffer->getSize());
 
 	LOG_INFO("Buffers initialized");
 }
@@ -302,34 +311,6 @@ void Application::terminate() {
 	if (m_window.handle != nullptr) {
 		glfwDestroyWindow(m_window.handle);
 		LOG_TRACE("Application window destroyed");
-	}
-	if (m_pipeline != nullptr) {
-		m_pipeline.release();
-		LOG_TRACE("Pipeline destroyed");
-	}
-	if (m_vertexBuffer != nullptr) {
-		m_vertexBuffer.release();
-		LOG_TRACE("Buffers destroyed");
-	}
-	if (m_indexBuffer != nullptr) {
-		m_indexBuffer.release();
-		LOG_TRACE("Index buffer destroyed");
-	}
-	if (m_uniformBuffer != nullptr) {
-		m_uniformBuffer.release();
-		LOG_TRACE("Uniform buffer destroyed");
-	}
-	if (m_pipelineLayout != nullptr) {
-		m_pipelineLayout.release();
-		LOG_TRACE("Pipeline layout destroyed");
-	}
-	if (m_bindGroupLayout != nullptr) {
-		m_bindGroupLayout.release();
-		LOG_TRACE("Bind group layout destroyed");
-	}
-	if (m_bindGroup != nullptr) {
-		m_bindGroup.release();
-		LOG_TRACE("Bind group destroyed");
 	}
 	terminateGui();
 	glfwTerminate();

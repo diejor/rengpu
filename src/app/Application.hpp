@@ -3,6 +3,7 @@
 #include <glm.hpp>
 
 #include "../renderer/Context.hpp"
+#include "../renderer/Driver.hpp"
 #include "../renderer/Vertex.hpp"
 
 #include <GLFW/glfw3.h>
@@ -37,13 +38,13 @@ private:
 	Window m_window;
 	RdContext m_context;
 	RdDriver m_driver;
-    wgpu::RenderPipeline m_pipeline;
-    wgpu::Buffer m_vertexBuffer;
-    wgpu::Buffer m_indexBuffer;
-    wgpu::Buffer m_uniformBuffer;
-    wgpu::PipelineLayout m_pipelineLayout;
-    wgpu::BindGroupLayout m_bindGroupLayout;
-    wgpu::BindGroup m_bindGroup;
+    wgpu::raii::RenderPipeline m_pipeline;
+    wgpu::raii::Buffer m_vertexBuffer;
+    wgpu::raii::Buffer m_indexBuffer;
+    wgpu::raii::Buffer m_uniformBuffer;
+    wgpu::raii::PipelineLayout m_pipelineLayout;
+    wgpu::raii::BindGroupLayout m_bindGroupLayout;
+    wgpu::raii::BindGroup m_bindGroup;
 	std::vector<Vertex> m_vertexData;
 	std::vector<uint16_t> m_indexData;
 	uint32_t m_indexCount;

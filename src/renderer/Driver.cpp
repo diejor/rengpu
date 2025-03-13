@@ -15,7 +15,7 @@
 #include <tracy/Tracy.hpp>
 #include <webgpu/webgpu.hpp>
 
-wgpu::RenderPipeline RdDriver::createPipeline(RdSurface& rdSurface, const wgpu::PipelineLayout& pipelineLayout) {
+wgpu::RenderPipeline RdDriver::createPipeline(RdContext::Surface& rdSurface, const wgpu::PipelineLayout& pipelineLayout) {
 	ZoneScoped;
 	// Load shader module using wrapper method.
 	wgpu::ShaderModule module = loadShaderModule("triangles.wgsl");

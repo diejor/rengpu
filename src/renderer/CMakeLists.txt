@@ -4,7 +4,6 @@ add_library(renderer STATIC
     Driver.hpp
     Driver.cpp
 
-    Surface.hpp  
     Vertex.hpp
 )
 
