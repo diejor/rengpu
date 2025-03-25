@@ -58,15 +58,14 @@ bool Application::initialize() {
 		.height = static_cast<uint32_t>(height),
 	};
 
-	wgpu::Device device = nullptr;
-	wgpu::Queue queue = nullptr;
-	m_context.initialize(instance, std::move(surface), &device, &queue);
-    wgpu::raii::Device h_device(device);
-    wgpu::raii::Queue h_queue(queue);
+    RdDriver m_driver = {};
+
+	m_context.initialize(instance, std::move(surface), &m_driver.device, &m_driver.queue);
 
 	m_driver = { 
         .device = wgpu::raii::Device(device), 
-        .queue = wgpu::raii::Queue(queue) };
+        .queue = wgpu::raii::Queue(queue) 
+    };
 
 	m_context.configureSurface(width, height, *m_driver.device);
 
@@ -92,7 +91,7 @@ bool Application::initGui() {
 
 	// Use designated initializer to create a RenderInitInfo struct
 	ImGui_ImplWGPU_InitInfo initInfo = {};
-	initInfo.Device = m_driver.device;
+	initInfo.Device = *m_driver.device;
 	initInfo.NumFramesInFlight = 3;
 	initInfo.RenderTargetFormat = m_context.surface.format;
 	initInfo.DepthStencilFormat = m_context.surface.depthTextureFormat;
@@ -111,9 +110,9 @@ void Application::mainLoop() {
 
 	{
 		ZoneScopedN("Update Buffers");
-		m_driver.queue.writeBuffer(*m_vertexBuffer, 0, m_vertexData.data(), m_vertexData.size() * sizeof(Vertex));
+		m_driver.queue->writeBuffer(*m_vertexBuffer, 0, m_vertexData.data(), m_vertexData.size() * sizeof(Vertex));
 		float currentTime = static_cast<float>(glfwGetTime());
-		m_driver.queue.writeBuffer(*m_uniformBuffer, 0, &currentTime, sizeof(float));
+		m_driver.queue->writeBuffer(*m_uniformBuffer, 0, &currentTime, sizeof(float));
 	}
 
 	wgpu::TextureView textureView = m_context.nextTextureView();

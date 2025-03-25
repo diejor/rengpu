@@ -1,12 +1,13 @@
 #include "Context.hpp"
 
+#include "Driver.hpp"
 #include "logging_macros.h"
 #include "tracy/Tracy.hpp"
 
 #define WEBGPU_CPP_IMPLEMENTATION
 #include <webgpu/webgpu.hpp>
 
-void RdContext::initialize(wgpu::Instance _instance, Surface _surface, wgpu::Device* p_device, wgpu::Queue* p_queue) {
+void RdContext::initialize(wgpu::Instance _instance, Surface _surface, RdDriver* p_driver) {
 	ZoneScoped;
 	this->instance = std::move(_instance);
 	this->surface = std::move(_surface);
